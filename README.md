@@ -26,4 +26,4 @@ cd originality-ai
 npm install
 npm start
 ```
-Open → http://localhost:3000](https://originalityai.onrender.com/
+Open → https://originalityai.onrender.com/
