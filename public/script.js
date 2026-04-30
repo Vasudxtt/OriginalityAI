@@ -16,6 +16,8 @@ const analyzeBtn    = document.getElementById('analyzeBtn');
 const loader        = document.getElementById('loader');
 const loaderLabel   = document.getElementById('loaderLabel');
 const loaderBar     = document.getElementById('loaderBar');
+const loaderHint    = document.getElementById('loaderHint');
+const loaderTime    = document.getElementById('loaderTime');
 const results       = document.getElementById('results');
 const uploadSection = document.getElementById('uploadSection');
 const themeBtn      = document.getElementById('themeBtn');
@@ -42,6 +44,8 @@ const copyBtn     = document.getElementById('copyBtn');
 let currentFile   = null;
 let currentReport = null;
 let pollTimer     = null;
+let jobStartTime  = null;
+let clockTimer    = null;
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
 function setTheme(t) {
@@ -108,6 +112,8 @@ analyzeBtn.addEventListener('click', async () => {
     const { jobId } = uploadData;
     if (!jobId) throw new Error('No job ID returned from server');
 
+    jobStartTime = Date.now();
+    startClock();
     setLoaderState('Analysis started — processing your document…', 2);
 
     // Step 2: Poll /status/:jobId every 4 seconds
@@ -141,13 +147,14 @@ function pollForResult(jobId) {
           const current = data.progress || 0;
           const total   = data.total || '?';
           const msg     = total !== '?'
-            ? `Analyzing chunk ${current} of ${total} (${pct}% done)…`
+            ? `Analyzing chunk ${current} of ${total}…`
             : 'Starting analysis…';
-          setLoaderState(msg, pct);
+          setLoaderState(msg, pct, current, total);
 
         } else if (data.status === 'done') {
           stopPolling();
-          setLoaderState('Complete!', 100);
+          stopClock();
+          setLoaderState('Complete!', 100, 1, 1);
           currentReport = { ...data, fileName: currentFile.name };
           renderResults(data);
           saveHistory(data, currentFile.name);
@@ -171,15 +178,45 @@ function pollForResult(jobId) {
 }
 
 // ── Loader state updater ───────────────────────────────────────────────────────
-function setLoaderState(msg, percent) {
+function setLoaderState(msg, percent, current, total) {
   loaderLabel.textContent = msg;
-  // Override the CSS indeterminate animation when we have real progress
   if (percent > 0) {
     loaderBar.style.animation = 'none';
     loaderBar.style.marginLeft = '0';
     loaderBar.style.width = Math.max(percent, 3) + '%';
     loaderBar.style.transition = 'width 0.6s ease';
   }
+  // Update estimated time remaining
+  if (loaderTime && jobStartTime && current > 1 && total && total !== '?') {
+    const elapsed   = (Date.now() - jobStartTime) / 1000; // seconds
+    const rate      = elapsed / current;                   // seconds per chunk
+    const remaining = Math.round(rate * (total - current));
+    loaderTime.textContent = remaining > 0 ? `~${fmtTime(remaining)} remaining` : 'Almost done…';
+  }
+}
+
+function fmtTime(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function startClock() {
+  stopClock();
+  if (loaderTime) loaderTime.textContent = 'Calculating time…';
+  // Tick every second to update elapsed time display
+  clockTimer = setInterval(() => {
+    if (!jobStartTime) return;
+    const elapsed = Math.round((Date.now() - jobStartTime) / 1000);
+    const el = document.getElementById('loaderElapsed');
+    if (el) el.textContent = `Elapsed: ${fmtTime(elapsed)}`;
+  }, 1000);
+}
+
+function stopClock() {
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+  jobStartTime = null;
 }
 
 // ── Render results ─────────────────────────────────────────────────────────────
@@ -289,6 +326,7 @@ function buildSuggItem(s, num) {
 // ── Actions ────────────────────────────────────────────────────────────────────
 reuploadBtn.addEventListener('click', () => {
   stopPolling();
+  stopClock();
   results.classList.add('hidden');
   uploadSection.classList.remove('hidden');
   // Reset loader bar for next use
