@@ -56,7 +56,7 @@ function chunkText(text, maxWords = 2000) {
   return out;
 }
 
-async function callGroq(userPrompt, maxTokens = 2000) {
+async function callGroq(userPrompt, maxTokens = 1024) {
   const r = await axios.post(
     "https://api.groq.com/openai/v1/chat/completions",
     {
@@ -112,7 +112,7 @@ Return ONLY a valid JSON object with this exact schema:
 }
 Scoring: plagiarism_score 0=highly original, 100=AI/copied. Flag 3-6 phrases per chunk. Each flagged section MUST have a replacement.`;
 
-  const raw = await callGroq(prompt, 2000);
+  const raw = await callGroq(prompt, 1024);
   const cleaned = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
   return JSON.parse(cleaned);
 }
@@ -135,11 +135,13 @@ function mergeResults(results) {
 // ── Background processor ──────────────────────────────────────────────────────
 async function processJobInBackground(jobId, rawText, wordCount, fileName) {
   try {
-    const chunks = chunkText(rawText, 5000); // fewer chunks = fewer API calls
+    const chunks = chunkText(rawText, 1500); // 1500 words = safe for Groq API
     jobs[jobId].total = chunks.length;
     console.log(`🔄 [${jobId}] Processing ${chunks.length} chunks for "${fileName}"...`);
 
     const chunkResults = [];
+    // Small cooldown before starting to avoid hitting rate limits immediately
+    await new Promise(r => setTimeout(r, 2000));
     for (let i = 0; i < chunks.length; i++) {
       let attempt = 0;
       let success = false;
