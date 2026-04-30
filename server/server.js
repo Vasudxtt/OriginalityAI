@@ -19,7 +19,7 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
-const GROQ_MODEL   = 'llama-3.3-70b-versatile';
+const GROQ_MODEL   = 'llama-3.1-8b-instant';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
 const jobs = {};
