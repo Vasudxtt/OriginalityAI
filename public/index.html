@@ -94,23 +94,31 @@
     </button>
   </section>
 
-  <!-- Loader -->
-  <section class="loader-wrap hidden" id="loader">
+ <!-- REPLACE your existing loader section in index.html with this -->
+<section class="loader-wrap hidden" id="loader">
   <div class="loader-box">
     <div class="loader-orbit">
       <div class="loader-planet"></div>
     </div>
     <p class="loader-label" id="loaderLabel">Extracting text…</p>
     <p class="loader-hint" id="loaderHint">Large documents are chunked so nothing gets missed</p>
+ 
+    <!-- Time + Percent row -->
     <div class="loader-time-row">
       <span class="loader-time-badge" id="loaderTime"></span>
       <span class="loader-elapsed" id="loaderElapsed"></span>
     </div>
-    <div class="loader-progress">
-      <div class="loader-bar" id="loaderBar"></div>
+ 
+    <!-- Progress bar with % label -->
+    <div class="loader-progress-wrap">
+      <div class="loader-progress">
+        <div class="loader-bar" id="loaderBar"></div>
+      </div>
+      <span class="loader-percent" id="loaderPercent"></span>
     </div>
   </div>
 </section>
+ 
 
   <!-- Results -->
   <section class="results hidden" id="results">
