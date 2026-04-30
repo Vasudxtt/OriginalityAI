@@ -18,7 +18,7 @@ const crypto   = require("crypto");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
 const GROQ_MODEL   = 'llama-3.1-8b-instant';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
@@ -135,28 +135,33 @@ function mergeResults(results) {
 // ── Background processor ──────────────────────────────────────────────────────
 async function processJobInBackground(jobId, rawText, wordCount, fileName) {
   try {
-    const chunks = chunkText(rawText, 2000);
+    const chunks = chunkText(rawText, 3000); // bigger chunks = fewer API calls
     jobs[jobId].total = chunks.length;
     console.log(`🔄 [${jobId}] Processing ${chunks.length} chunks for "${fileName}"...`);
 
     const chunkResults = [];
     for (let i = 0; i < chunks.length; i++) {
       let attempt = 0;
-      while (attempt < 3) {
+      let success = false;
+      while (attempt < 5 && !success) {
         try {
-          console.log(`  ↳ [${jobId}] Chunk ${i + 1}/${chunks.length}`);
+          console.log(`  ↳ [${jobId}] Chunk ${i + 1}/${chunks.length} (attempt ${attempt + 1})`);
           chunkResults.push(await analyzeChunk(chunks[i], i, chunks.length));
           jobs[jobId].progress = i + 1;
-          break;
+          success = true;
         } catch (err) {
           attempt++;
-          if (attempt >= 3) throw new Error(`Chunk ${i + 1} failed: ${err.message}`);
-          const delay = err.response?.status === 429 ? 15000 : 2000;
-          console.log(`  ⚠️  Retrying chunk ${i + 1} in ${delay / 1000}s...`);
+          const is429 = err.response?.status === 429;
+          // Exponential backoff: 15s, 30s, 60s, 120s for 429; 3s, 6s, 12s for others
+          const baseDelay = is429 ? 15000 : 3000;
+          const delay = baseDelay * Math.pow(2, attempt - 1);
+          console.log(`  ⚠️  [${jobId}] Chunk ${i + 1} failed (${is429 ? '429 rate limit' : err.message}). Waiting ${delay/1000}s before retry...`);
+          if (attempt >= 5) throw new Error(`Chunk ${i + 1} failed after 5 attempts: ${err.message}`);
           await new Promise(r => setTimeout(r, delay));
         }
       }
-      if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 800));
+      // 2s between chunks = stays within Groq free tier 30 req/min
+      if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 3000));
     }
 
     const final = mergeResults(chunkResults);
