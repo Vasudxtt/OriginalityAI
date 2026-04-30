@@ -18,12 +18,18 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
-const GROQ_MODEL   = 'llama-3.1-8b-instant';
+const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 
 app.use(cors());
 // ── Increase Express body parser limit to 100MB ────────────────────────────────
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
+
+// ── Increase server timeout for large file processing on Render ───────────────
+app.use((req, res, next) => {
+  res.setTimeout(600000); // 10 minutes
+  next();
+});
 app.use(express.static(path.join(__dirname, "../public")));
 
 // ── Multer: memory, 100 MB, PDF+DOCX only ─────────────────────────────────────
@@ -218,8 +224,13 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🚀  Originality Checker AI  →  http://localhost:${PORT}`);
   console.log(`    AI  : Groq / ${GROQ_MODEL}`);
   console.log(`    Max : 100MB uploads\n`);
 });
+
+// ── Extend timeout for large file uploads on Render ───────────────────────────
+server.setTimeout(600000);      // 10 minutes
+server.keepAliveTimeout = 620000;
+server.headersTimeout   = 630000;
