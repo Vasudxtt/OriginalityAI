@@ -17,7 +17,7 @@ const mammoth  = require("mammoth");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
 const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 
 app.use(cors());
@@ -223,4 +223,3 @@ app.listen(PORT, () => {
   console.log(`    AI  : Groq / ${GROQ_MODEL}`);
   console.log(`    Max : 100MB uploads\n`);
 });
-
