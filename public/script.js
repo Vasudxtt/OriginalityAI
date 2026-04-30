@@ -180,18 +180,31 @@ function pollForResult(jobId) {
 // ── Loader state updater ───────────────────────────────────────────────────────
 function setLoaderState(msg, percent, current, total) {
   loaderLabel.textContent = msg;
+
+  // Always update progress bar when we have real percent
   if (percent > 0) {
     loaderBar.style.animation = 'none';
     loaderBar.style.marginLeft = '0';
     loaderBar.style.width = Math.max(percent, 3) + '%';
-    loaderBar.style.transition = 'width 0.6s ease';
+    loaderBar.style.transition = 'width 0.8s ease';
   }
-  // Update estimated time remaining
-  if (loaderTime && jobStartTime && current > 1 && total && total !== '?') {
-    const elapsed   = (Date.now() - jobStartTime) / 1000; // seconds
-    const rate      = elapsed / current;                   // seconds per chunk
+
+  // Show percent text immediately
+  const loaderPct = document.getElementById('loaderPercent');
+  if (loaderPct) loaderPct.textContent = percent > 0 ? percent + '%' : '';
+
+  // Show time estimate from chunk 1 onwards
+  if (loaderTime && jobStartTime && current >= 1 && total && total !== '?') {
+    const elapsed   = (Date.now() - jobStartTime) / 1000;
+    const rate      = elapsed / current;
     const remaining = Math.round(rate * (total - current));
-    loaderTime.textContent = remaining > 0 ? `~${fmtTime(remaining)} remaining` : 'Almost done…';
+    if (remaining > 0) {
+      loaderTime.textContent = '~' + fmtTime(remaining) + ' remaining';
+    } else if (current >= total) {
+      loaderTime.textContent = 'Almost done…';
+    } else {
+      loaderTime.textContent = 'Estimating…';
+    }
   }
 }
 
@@ -204,13 +217,13 @@ function fmtTime(seconds) {
 
 function startClock() {
   stopClock();
-  if (loaderTime) loaderTime.textContent = 'Calculating time…';
-  // Tick every second to update elapsed time display
+  if (loaderTime) loaderTime.textContent = '';
+  // Tick every second — update elapsed time
   clockTimer = setInterval(() => {
     if (!jobStartTime) return;
     const elapsed = Math.round((Date.now() - jobStartTime) / 1000);
     const el = document.getElementById('loaderElapsed');
-    if (el) el.textContent = `Elapsed: ${fmtTime(elapsed)}`;
+    if (el) el.textContent = 'Elapsed: ' + fmtTime(elapsed);
   }, 1000);
 }
 
