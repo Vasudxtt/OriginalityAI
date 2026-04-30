@@ -1,6 +1,6 @@
 /**
- * Originality Checker AI — Frontend v2
- * Bigger UI · Replacement text for flagged phrases · Before/After suggestion examples
+ * Originality Checker AI — Frontend v3
+ * Background job polling — supports 200+ page documents
  */
 'use strict';
 
@@ -15,6 +15,7 @@ const fileRemove    = document.getElementById('fileRemove');
 const analyzeBtn    = document.getElementById('analyzeBtn');
 const loader        = document.getElementById('loader');
 const loaderLabel   = document.getElementById('loaderLabel');
+const loaderBar     = document.getElementById('loaderBar');
 const results       = document.getElementById('results');
 const uploadSection = document.getElementById('uploadSection');
 const themeBtn      = document.getElementById('themeBtn');
@@ -40,6 +41,7 @@ const copyBtn     = document.getElementById('copyBtn');
 // ── State ──────────────────────────────────────────────────────────────────────
 let currentFile   = null;
 let currentReport = null;
+let pollTimer     = null;
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
 function setTheme(t) {
@@ -66,8 +68,7 @@ fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(
 // ── File handling ──────────────────────────────────────────────────────────────
 function handleFile(file) {
   const ext = '.' + file.name.split('.').pop().toLowerCase();
-  const ok  = ['.pdf','.docx'];
-  if (!ok.includes(ext)) { showToast('❌ Only PDF and DOCX files are supported.', 'error'); return; }
+  if (!['.pdf','.docx'].includes(ext)) { showToast('❌ Only PDF and DOCX files are supported.', 'error'); return; }
   if (file.size > 100 * 1024 * 1024) { showToast('❌ File exceeds 100 MB limit.', 'error'); return; }
   currentFile = file;
   fileNameEl.textContent = file.name;
@@ -87,53 +88,104 @@ function fmtSize(b) {
   return (b/1048576).toFixed(1) + ' MB';
 }
 
-// ── Loader messages ────────────────────────────────────────────────────────────
-const MSGS = [
-  'Extracting text from document…',
-  'Chunking content for deep analysis…',
-  'Scanning for plagiarism patterns…',
-  'Detecting AI-generation signals…',
-  'Generating replacement suggestions…',
-  'Compiling your full report…',
-];
-
-// ── Analyze ────────────────────────────────────────────────────────────────────
+// ── Analyze — submit file, get jobId, then poll ────────────────────────────────
 analyzeBtn.addEventListener('click', async () => {
   if (!currentFile) return;
+
   uploadSection.classList.add('hidden');
   results.classList.add('hidden');
   loader.classList.remove('hidden');
-
-  let mi = 0;
-  loaderLabel.textContent = MSGS[0];
-  const interval = setInterval(() => {
-    mi = (mi + 1) % MSGS.length;
-    loaderLabel.textContent = MSGS[mi];
-  }, 2600);
+  setLoaderState('Uploading document…', 0);
 
   try {
+    // Step 1: Upload file — server responds instantly with jobId
     const fd = new FormData();
     fd.append('file', currentFile);
-    const res  = await fetch('/analyze', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Analysis failed');
-    clearInterval(interval);
-    currentReport = { ...data, fileName: currentFile.name };
-    renderResults(data);
-    saveHistory(data, currentFile.name);
+    const uploadRes = await fetch('/analyze', { method: 'POST', body: fd });
+    const uploadData = await uploadRes.json();
+    if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
+
+    const { jobId } = uploadData;
+    if (!jobId) throw new Error('No job ID returned from server');
+
+    setLoaderState('Analysis started — processing your document…', 2);
+
+    // Step 2: Poll /status/:jobId every 4 seconds
+    await pollForResult(jobId);
+
   } catch (err) {
-    clearInterval(interval);
+    stopPolling();
     loader.classList.add('hidden');
     uploadSection.classList.remove('hidden');
     showToast('❌ ' + (err.message || 'Unexpected error'), 'error');
   }
 });
 
+// ── Polling ────────────────────────────────────────────────────────────────────
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function pollForResult(jobId) {
+  return new Promise((resolve, reject) => {
+    let consecutiveErrors = 0;
+
+    pollTimer = setInterval(async () => {
+      try {
+        const res  = await fetch(`/status/${jobId}`);
+        const data = await res.json();
+        consecutiveErrors = 0;
+
+        if (data.status === 'processing') {
+          const pct     = data.percent || 0;
+          const current = data.progress || 0;
+          const total   = data.total || '?';
+          const msg     = total !== '?'
+            ? `Analyzing chunk ${current} of ${total} (${pct}% done)…`
+            : 'Starting analysis…';
+          setLoaderState(msg, pct);
+
+        } else if (data.status === 'done') {
+          stopPolling();
+          setLoaderState('Complete!', 100);
+          currentReport = { ...data, fileName: currentFile.name };
+          renderResults(data);
+          saveHistory(data, currentFile.name);
+          resolve();
+
+        } else if (data.status === 'error') {
+          stopPolling();
+          reject(new Error(data.error || 'Analysis failed on server'));
+        }
+
+      } catch (err) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= 5) {
+          stopPolling();
+          reject(new Error('Lost connection to server. Please try again.'));
+        }
+        // else silently retry
+      }
+    }, 4000); // poll every 4 seconds
+  });
+}
+
+// ── Loader state updater ───────────────────────────────────────────────────────
+function setLoaderState(msg, percent) {
+  loaderLabel.textContent = msg;
+  // Override the CSS indeterminate animation when we have real progress
+  if (percent > 0) {
+    loaderBar.style.animation = 'none';
+    loaderBar.style.marginLeft = '0';
+    loaderBar.style.width = Math.max(percent, 3) + '%';
+    loaderBar.style.transition = 'width 0.6s ease';
+  }
+}
+
 // ── Render results ─────────────────────────────────────────────────────────────
 function renderResults(data) {
   loader.classList.add('hidden');
 
-  // Scores
   const score = Math.min(100, Math.max(0, data.plagiarism_score || 0));
   plagScore.textContent = score;
   plagBar.style.width = '0%';
@@ -145,11 +197,10 @@ function renderResults(data) {
   aiBadge.className   = 'ai-badge ' + likelihood.toLowerCase();
   aiDesc.textContent  = aiDesc_(likelihood);
 
-  wordCount.textContent  = (data.word_count || 0).toLocaleString();
+  wordCount.textContent   = (data.word_count || 0).toLocaleString();
   chunksCount.textContent = data.chunks_analyzed || 1;
   summaryText.textContent = data.summary || 'No summary available.';
 
-  // Flagged sections with replacement text
   const flags = data.flagged_sections || [];
   flagCount.textContent = flags.length;
   flagList.innerHTML = '';
@@ -159,7 +210,6 @@ function renderResults(data) {
     flags.forEach(f => flagList.appendChild(buildFlagItem(f)));
   }
 
-  // Suggestions with before/after
   const suggs = data.improvement_suggestions || [];
   suggCount.textContent = suggs.length;
   suggList.innerHTML = '';
@@ -178,9 +228,7 @@ function renderResults(data) {
 function buildFlagItem(f) {
   const div = document.createElement('div');
   div.className = 'flag-item';
-
   const replacement = f.replacement || 'Consider rewriting this phrase in your own authentic voice.';
-
   div.innerHTML = `
     <div class="flag-original">
       <div class="flag-original-left">
@@ -196,7 +244,6 @@ function buildFlagItem(f) {
       </div>
       <button class="copy-btn" title="Copy replacement text">⎘ Copy</button>
     </div>`;
-
   div.querySelector('.copy-btn').addEventListener('click', function() {
     navigator.clipboard.writeText(replacement).then(() => {
       this.textContent = '✓ Copied';
@@ -204,7 +251,6 @@ function buildFlagItem(f) {
       setTimeout(() => { this.textContent = '⎘ Copy'; this.classList.remove('copied'); }, 2000);
     });
   });
-
   return div;
 }
 
@@ -212,8 +258,6 @@ function buildFlagItem(f) {
 function buildSuggItem(s, num) {
   const div = document.createElement('div');
   div.className = 'sugg-item';
-
-  // Handle both string suggestions (old) and object suggestions (new)
   if (typeof s === 'string') {
     div.innerHTML = `
       <div class="sugg-header">
@@ -239,14 +283,17 @@ function buildSuggItem(s, num) {
           </div>
         </div>` : ''}`;
   }
-
   return div;
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────
 reuploadBtn.addEventListener('click', () => {
+  stopPolling();
   results.classList.add('hidden');
   uploadSection.classList.remove('hidden');
+  // Reset loader bar for next use
+  loaderBar.style.animation = '';
+  loaderBar.style.width = '0%';
   resetUpload();
   uploadSection.scrollIntoView({ behavior: 'smooth' });
 });
@@ -282,9 +329,9 @@ function buildReportText(data) {
     data.summary || '—', '',
     sub, 'FLAGGED PHRASES + REPLACEMENTS', sub,
     ...(data.flagged_sections||[]).flatMap((f,i) => [
-      `${i+1}. FLAGGED   : "${f.text}"`,
-      `   REASON    : ${f.reason}`,
-      `   REPLACE WITH: "${f.replacement || 'Rewrite in your own voice'}"`,
+      `${i+1}. FLAGGED      : "${f.text}"`,
+      `   REASON       : ${f.reason}`,
+      `   REPLACE WITH : "${f.replacement || 'Rewrite in your own voice'}"`,
       ''
     ]),
     sub, 'IMPROVEMENT SUGGESTIONS', sub,
