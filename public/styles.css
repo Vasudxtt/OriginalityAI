@@ -444,13 +444,14 @@ body{
   .action-bar{flex-direction:column}
   .act-btn{text-align:center}
 }
-/* ── LOADER TIME ROW ─────────────────────────────────────────────── */
+
+/* ── LOADER TIME + PROGRESS (add to bottom of styles.css) ──────── */
 .loader-time-row {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  min-height: 24px;
+  min-height: 28px;
   flex-wrap: wrap;
 }
 .loader-time-badge {
@@ -459,10 +460,9 @@ body{
   color: var(--accent);
   background: rgba(212,255,78,0.1);
   border: 1px solid rgba(212,255,78,0.25);
-  padding: 4px 14px;
+  padding: 4px 16px;
   border-radius: 20px;
-  letter-spacing: 0.3px;
-  min-width: 140px;
+  min-width: 160px;
   text-align: center;
   transition: all 0.4s ease;
 }
@@ -470,4 +470,24 @@ body{
   font-size: 12px;
   color: var(--text3);
   letter-spacing: 0.3px;
+}
+.loader-progress-wrap {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Override existing .loader-progress to flex-1 */
+.loader-progress-wrap .loader-progress {
+  flex: 1;
+  margin-top: 0;
+}
+.loader-percent {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 38px;
+  text-align: right;
+  font-family: 'Syne', sans-serif;
+  letter-spacing: -0.5px;
 }
