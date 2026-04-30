@@ -135,7 +135,7 @@ function mergeResults(results) {
 // ── Background processor ──────────────────────────────────────────────────────
 async function processJobInBackground(jobId, rawText, wordCount, fileName) {
   try {
-    const chunks = chunkText(rawText, 3000); // bigger chunks = fewer API calls
+    const chunks = chunkText(rawText, 5000); // fewer chunks = fewer API calls
     jobs[jobId].total = chunks.length;
     console.log(`🔄 [${jobId}] Processing ${chunks.length} chunks for "${fileName}"...`);
 
