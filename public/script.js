@@ -1,479 +1,465 @@
 /**
- * Originality Checker AI — Frontend v3
- * Background job polling — supports 200+ page documents
- */
-'use strict';
+
+- Originality Checker AI — Frontend v3
+- Background job polling — supports 200+ page documents
+*/
+‘use strict’;
 
 // ── DOM ────────────────────────────────────────────────────────────────────────
-const dropZone      = document.getElementById('dropZone');
-const fileInput     = document.getElementById('fileInput');
-const filePreview   = document.getElementById('filePreview');
-const fileNameEl    = document.getElementById('fileName');
-const fileSizeEl    = document.getElementById('fileSize');
-const fileExtEl     = document.getElementById('fileExt');
-const fileRemove    = document.getElementById('fileRemove');
-const analyzeBtn    = document.getElementById('analyzeBtn');
-const loader        = document.getElementById('loader');
-const loaderLabel   = document.getElementById('loaderLabel');
-const loaderBar     = document.getElementById('loaderBar');
-const loaderHint    = document.getElementById('loaderHint');
-const loaderTime    = document.getElementById('loaderTime');
-const results       = document.getElementById('results');
-const uploadSection = document.getElementById('uploadSection');
-const themeBtn      = document.getElementById('themeBtn');
-const historyList   = document.getElementById('historyList');
-const clearHistoryBtn = document.getElementById('clearHistory');
+const dropZone = document.getElementById(‘dropZone’);
+const fileInput = document.getElementById(‘fileInput’);
+const filePreview = document.getElementById(‘filePreview’);
+const fileNameEl = document.getElementById(‘fileName’);
+const fileSizeEl = document.getElementById(‘fileSize’);
+const fileExtEl = document.getElementById(‘fileExt’);
+const fileRemove = document.getElementById(‘fileRemove’);
+const analyzeBtn = document.getElementById(‘analyzeBtn’);
+const loader = document.getElementById(‘loader’);
+const loaderLabel = document.getElementById(‘loaderLabel’);
+const loaderBar = document.getElementById(‘loaderBar’);
+const loaderHint = document.getElementById(‘loaderHint’);
+const loaderTime = document.getElementById(‘loaderTime’);
+const results = document.getElementById(‘results’);
+const uploadSection = document.getElementById(‘uploadSection’);
+const themeBtn = document.getElementById(‘themeBtn’);
+const historyList = document.getElementById(‘historyList’);
+const clearHistoryBtn = document.getElementById(‘clearHistory’);
 
-const plagScore   = document.getElementById('plagScore');
-const plagBar     = document.getElementById('plagBar');
-const plagDesc    = document.getElementById('plagDesc');
-const aiBadge     = document.getElementById('aiBadge');
-const aiDesc      = document.getElementById('aiDesc');
-const wordCount   = document.getElementById('wordCount');
-const chunksCount = document.getElementById('chunksCount');
-const summaryText = document.getElementById('summaryText');
-const flagList    = document.getElementById('flagList');
-const flagCount   = document.getElementById('flagCount');
-const suggList    = document.getElementById('suggList');
-const suggCount   = document.getElementById('suggCount');
-const downloadBtn = document.getElementById('downloadBtn');
-const reuploadBtn = document.getElementById('reuploadBtn');
-const copyBtn     = document.getElementById('copyBtn');
+const plagScore = document.getElementById(‘plagScore’);
+const plagBar = document.getElementById(‘plagBar’);
+const plagDesc = document.getElementById(‘plagDesc’);
+const aiBadge = document.getElementById(‘aiBadge’);
+const aiDesc = document.getElementById(‘aiDesc’);
+const wordCount = document.getElementById(‘wordCount’);
+const chunksCount = document.getElementById(‘chunksCount’);
+const summaryText = document.getElementById(‘summaryText’);
+const flagList = document.getElementById(‘flagList’);
+const flagCount = document.getElementById(‘flagCount’);
+const suggList = document.getElementById(‘suggList’);
+const suggCount = document.getElementById(‘suggCount’);
+const downloadBtn = document.getElementById(‘downloadBtn’);
+const reuploadBtn = document.getElementById(‘reuploadBtn’);
+const copyBtn = document.getElementById(‘copyBtn’);
 
 // ── State ──────────────────────────────────────────────────────────────────────
-let currentFile   = null;
+let currentFile = null;
 let currentReport = null;
-let pollTimer     = null;
-let jobStartTime  = null;
-let clockTimer    = null;
+let pollTimer = null;
+let jobStartTime = null;
+let clockTimer = null;
+let analysisStartMs = null; // separate from jobStartTime so stopClock doesn’t break estimates
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
 function setTheme(t) {
-  document.documentElement.setAttribute('data-theme', t);
-  document.querySelector('.theme-icon').textContent = t === 'dark' ? '☀' : '☾';
-  localStorage.setItem('oc_theme', t);
+document.documentElement.setAttribute(‘data-theme’, t);
+document.querySelector(’.theme-icon’).textContent = t === ‘dark’ ? ‘☀’ : ‘☾’;
+localStorage.setItem(‘oc_theme’, t);
 }
-themeBtn.addEventListener('click', () => {
-  setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+themeBtn.addEventListener(‘click’, () => {
+setTheme(document.documentElement.getAttribute(‘data-theme’) === ‘dark’ ? ‘light’ : ‘dark’);
 });
-setTheme(localStorage.getItem('oc_theme') || 'dark');
+setTheme(localStorage.getItem(‘oc_theme’) || ‘dark’);
 
 // ── Drag & Drop ────────────────────────────────────────────────────────────────
-['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => {
-  ev.preventDefault(); dropZone.classList.add('drag-over');
+[‘dragenter’,‘dragover’].forEach(e => dropZone.addEventListener(e, ev => {
+ev.preventDefault(); dropZone.classList.add(‘drag-over’);
 }));
-['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => {
-  ev.preventDefault(); dropZone.classList.remove('drag-over');
+[‘dragleave’,‘drop’].forEach(e => dropZone.addEventListener(e, ev => {
+ev.preventDefault(); dropZone.classList.remove(‘drag-over’);
 }));
-dropZone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
-dropZone.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+dropZone.addEventListener(‘drop’, e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+dropZone.addEventListener(‘click’, () => fileInput.click());
+fileInput.addEventListener(‘change’, () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
 
 // ── File handling ──────────────────────────────────────────────────────────────
 function handleFile(file) {
-  const ext = '.' + file.name.split('.').pop().toLowerCase();
-  if (!['.pdf','.docx'].includes(ext)) { showToast('❌ Only PDF and DOCX files are supported.', 'error'); return; }
-  if (file.size > 100 * 1024 * 1024) { showToast('❌ File exceeds 100 MB limit.', 'error'); return; }
-  currentFile = file;
-  fileNameEl.textContent = file.name;
-  fileSizeEl.textContent = fmtSize(file.size);
-  fileExtEl.textContent  = ext.replace('.','').toUpperCase();
-  filePreview.classList.remove('hidden');
-  analyzeBtn.disabled = false;
+const ext = ‘.’ + file.name.split(’.’).pop().toLowerCase();
+if (![’.pdf’,’.docx’].includes(ext)) { showToast(‘❌ Only PDF and DOCX files are supported.’, ‘error’); return; }
+if (file.size > 100 * 1024 * 1024) { showToast(‘❌ File exceeds 100 MB limit.’, ‘error’); return; }
+currentFile = file;
+fileNameEl.textContent = file.name;
+fileSizeEl.textContent = fmtSize(file.size);
+fileExtEl.textContent = ext.replace(’.’,’’).toUpperCase();
+filePreview.classList.remove(‘hidden’);
+analyzeBtn.disabled = false;
 }
-fileRemove.addEventListener('click', resetUpload);
+fileRemove.addEventListener(‘click’, resetUpload);
 function resetUpload() {
-  currentFile = null; fileInput.value = '';
-  filePreview.classList.add('hidden'); analyzeBtn.disabled = true;
+currentFile = null; fileInput.value = ‘’;
+filePreview.classList.add(‘hidden’); analyzeBtn.disabled = true;
 }
 function fmtSize(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
-  return (b/1048576).toFixed(1) + ' MB';
+if (b < 1024) return b + ’ B’;
+if (b < 1048576) return (b/1024).toFixed(1) + ’ KB’;
+return (b/1048576).toFixed(1) + ’ MB’;
 }
 
 // ── Analyze — submit file, get jobId, then poll ────────────────────────────────
-analyzeBtn.addEventListener('click', async () => {
-  if (!currentFile) return;
+analyzeBtn.addEventListener(‘click’, async () => {
+if (!currentFile) return;
 
-  uploadSection.classList.add('hidden');
-  results.classList.add('hidden');
-  loader.classList.remove('hidden');
-  setLoaderState('Uploading document…', 0);
+uploadSection.classList.add(‘hidden’);
+results.classList.add(‘hidden’);
+loader.classList.remove(‘hidden’);
+setLoaderState(‘Uploading document…’, 0);
 
-  try {
-    // Step 1: Upload file — server responds instantly with jobId
-    const fd = new FormData();
-    fd.append('file', currentFile);
-    const uploadRes = await fetch('/analyze', { method: 'POST', body: fd });
-    const uploadData = await uploadRes.json();
-    if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
+try {
+// Step 1: Upload file — server responds instantly with jobId
+const fd = new FormData();
+fd.append(‘file’, currentFile);
+const uploadRes = await fetch(’/analyze’, { method: ‘POST’, body: fd });
+const uploadData = await uploadRes.json();
+if (!uploadRes.ok) throw new Error(uploadData.error || ‘Upload failed’);
 
-    const { jobId } = uploadData;
-    if (!jobId) throw new Error('No job ID returned from server');
+```
+const { jobId } = uploadData;
+if (!jobId) throw new Error('No job ID returned from server');
 
-    jobStartTime = Date.now();
-    startClock();
-    setLoaderState('Analysis started — processing your document…', 2);
+jobStartTime = Date.now();
+analysisStartMs = Date.now();
+startClock();
+setLoaderState('Analysis started — processing your document…', 2);
 
-    // Step 2: Poll /status/:jobId every 4 seconds
-    await pollForResult(jobId);
+// Step 2: Poll /status/:jobId every 4 seconds
+await pollForResult(jobId);
+```
 
-  } catch (err) {
-    stopPolling();
-    loader.classList.add('hidden');
-    uploadSection.classList.remove('hidden');
-    showToast('❌ ' + (err.message || 'Unexpected error'), 'error');
-  }
+} catch (err) {
+stopPolling();
+loader.classList.add(‘hidden’);
+uploadSection.classList.remove(‘hidden’);
+showToast(’❌ ’ + (err.message || ‘Unexpected error’), ‘error’);
+}
 });
 
 // ── Polling ────────────────────────────────────────────────────────────────────
 function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
 function pollForResult(jobId) {
-  return new Promise((resolve, reject) => {
-    let consecutiveErrors = 0;
+return new Promise((resolve, reject) => {
+let consecutiveErrors = 0;
 
-    pollTimer = setInterval(async () => {
-      try {
-        const res  = await fetch(`/status/${jobId}`);
-        const data = await res.json();
-        consecutiveErrors = 0;
+```
+pollTimer = setInterval(async () => {
+try {
+const res = await fetch(`/status/${jobId}`);
+const data = await res.json();
+consecutiveErrors = 0;
 
-        if (data.status === 'processing') {
-          const pct     = data.percent || 0;
-          const current = data.progress || 0;
-          const total   = data.total || '?';
-          const msg     = total !== '?'
-            ? `Analyzing chunk ${current} of ${total}…`
-            : 'Starting analysis…';
-          setLoaderState(msg, pct, current, total);
+if (data.status === 'processing') {
+const pct = data.percent || 0;
+const current = data.progress || 0;
+const total = data.total || '?';
+const msg = total !== '?'
+? `Analyzing chunk ${current} of ${total}…`
+: 'Starting analysis…';
+setLoaderState(msg, pct, current, total);
 
-        } else if (data.status === 'done') {
-          stopPolling();
-          stopClock();
-          setLoaderState('Complete!', 100, 1, 1);
-          currentReport = { ...data, fileName: currentFile.name };
-          renderResults(data);
-          saveHistory(data, currentFile.name);
-          resolve();
+} else if (data.status === 'done') {
+stopPolling();
+stopClock();
+setLoaderState('Complete!', 100, 1, 1);
+currentReport = { ...data, fileName: currentFile.name };
+renderResults(data);
+saveHistory(data, currentFile.name);
+resolve();
 
-        } else if (data.status === 'error') {
-          stopPolling();
-          reject(new Error(data.error || 'Analysis failed on server'));
-        }
+} else if (data.status === 'error') {
+stopPolling();
+reject(new Error(data.error || 'Analysis failed on server'));
+}
 
-      } catch (err) {
-        consecutiveErrors++;
-        if (consecutiveErrors >= 5) {
-          stopPolling();
-          reject(new Error('Lost connection to server. Please try again.'));
-        }
-        // else silently retry
-      }
-    }, 4000); // poll every 4 seconds
-  });
+} catch (err) {
+consecutiveErrors++;
+if (consecutiveErrors >= 5) {
+stopPolling();
+reject(new Error('Lost connection to server. Please try again.'));
+}
+// else silently retry
+}
+}, 4000); // poll every 4 seconds
+```
+
+});
 }
 
 // ── Loader state updater ───────────────────────────────────────────────────────
 function setLoaderState(msg, percent, current, total) {
-  loaderLabel.textContent = msg;
+loaderLabel.textContent = msg;
 
-  // Always update progress bar when we have real percent
-  if (percent > 0) {
-    loaderBar.style.animation = 'none';
-    loaderBar.style.marginLeft = '0';
-    loaderBar.style.width = Math.max(percent, 3) + '%';
-    loaderBar.style.transition = 'width 0.8s ease';
-  }
+// Progress bar
+if (percent > 0) {
+loaderBar.style.cssText = ‘animation:none;margin-left:0;width:’ + Math.max(percent, 3) + ‘%;transition:width 0.8s ease;’;
+}
 
-  // Show percent text immediately
-  const loaderPct = document.getElementById('loaderPercent');
-  if (loaderPct) loaderPct.textContent = percent > 0 ? percent + '%' : '';
+// Percent text next to bottom bar
+const loaderPct = document.getElementById(‘loaderPercent’);
+if (loaderPct) loaderPct.textContent = percent > 0 ? percent + ‘%’ : ‘’;
 
-  // Show time estimate from chunk 1 onwards
-  if (loaderTime && jobStartTime && current >= 1 && total && total !== '?') {
-    const elapsed   = (Date.now() - jobStartTime) / 1000;
-    const rate      = elapsed / current;
-    const remaining = Math.round(rate * (total - current));
-    if (remaining > 0) {
-      loaderTime.textContent = '~' + fmtTime(remaining) + ' remaining';
-    } else if (current >= total) {
-      loaderTime.textContent = 'Almost done…';
-    } else {
-      loaderTime.textContent = 'Estimating…';
-    }
-  }
+// Time remaining — use analysisStartMs so it works even after stopClock
+const startMs = analysisStartMs || jobStartTime;
+const hasTotal = total && total !== ‘?’ && Number(total) > 0;
+if (loaderTime && startMs && current >= 1 && hasTotal) {
+const elapsed = (Date.now() - startMs) / 1000;
+const rate = elapsed / current;
+const remaining = Math.round(rate * (Number(total) - current));
+loaderTime.style.display = ‘inline-block’;
+if (current >= Number(total)) {
+loaderTime.textContent = ‘✓ Almost done…’;
+} else if (remaining > 0) {
+loaderTime.textContent = ‘⏱ ~’ + fmtTime(remaining) + ’ remaining’;
+} else {
+loaderTime.textContent = ‘⏱ Calculating…’;
+}
+}
 }
 
 function fmtTime(seconds) {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+if (seconds < 60) return `${seconds}s`;
+const m = Math.floor(seconds / 60);
+const s = seconds % 60;
+return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
 function startClock() {
-  stopClock();
-  if (loaderTime) loaderTime.textContent = '';
-  // Tick every second — update elapsed time
-  clockTimer = setInterval(() => {
-    if (!jobStartTime) return;
-    const elapsed = Math.round((Date.now() - jobStartTime) / 1000);
-    const el = document.getElementById('loaderElapsed');
-    if (el) el.textContent = 'Elapsed: ' + fmtTime(elapsed);
-  }, 1000);
+stopClock();
+if (loaderTime) loaderTime.textContent = ‘’;
+// Tick every second — update elapsed time
+clockTimer = setInterval(() => {
+if (!jobStartTime) return;
+const elapsed = Math.round((Date.now() - jobStartTime) / 1000);
+const el = document.getElementById(‘loaderElapsed’);
+if (el) el.textContent = ’Elapsed: ’ + fmtTime(elapsed);
+}, 1000);
 }
 
 function stopClock() {
-  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
-  jobStartTime = null;
+if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+// Don’t null jobStartTime here — setLoaderState still needs it
 }
 
 // ── Render results ─────────────────────────────────────────────────────────────
 function renderResults(data) {
-  loader.classList.add('hidden');
+loader.classList.add(‘hidden’);
 
-  const score = Math.min(100, Math.max(0, data.plagiarism_score || 0));
-  plagScore.textContent = score;
-  plagBar.style.width = '0%';
-  setTimeout(() => { plagBar.style.width = score + '%'; }, 100);
-  plagDesc.textContent = scoreDesc(score);
+const score = Math.min(100, Math.max(0, data.plagiarism_score || 0));
+plagScore.textContent = score;
+plagBar.style.width = ‘0%’;
+setTimeout(() => { plagBar.style.width = score + ‘%’; }, 100);
+plagDesc.textContent = scoreDesc(score);
 
-  const likelihood = (data.ai_likelihood || 'Medium').trim();
-  aiBadge.textContent = likelihood;
-  aiBadge.className   = 'ai-badge ' + likelihood.toLowerCase();
-  aiDesc.textContent  = aiDesc_(likelihood);
+const likelihood = (data.ai_likelihood || ‘Medium’).trim();
+aiBadge.textContent = likelihood;
+aiBadge.className = ’ai-badge ’ + likelihood.toLowerCase();
+aiDesc.textContent = aiDesc_(likelihood);
 
-  wordCount.textContent   = (data.word_count || 0).toLocaleString();
-  chunksCount.textContent = data.chunks_analyzed || 1;
-  summaryText.textContent = data.summary || 'No summary available.';
+wordCount.textContent = (data.word_count || 0).toLocaleString();
+chunksCount.textContent = data.chunks_analyzed || 1;
+summaryText.textContent = data.summary || ‘No summary available.’;
 
-  const flags = data.flagged_sections || [];
-  flagCount.textContent = flags.length;
-  flagList.innerHTML = '';
-  if (!flags.length) {
-    flagList.innerHTML = '<p style="font-size:14px;color:var(--text3);padding:8px 0">No phrases flagged — looks good!</p>';
-  } else {
-    flags.forEach(f => flagList.appendChild(buildFlagItem(f)));
-  }
+const flags = data.flagged_sections || [];
+flagCount.textContent = flags.length;
+flagList.innerHTML = ‘’;
+if (!flags.length) {
+flagList.innerHTML = ‘<p style="font-size:14px;color:var(--text3);padding:8px 0">No phrases flagged — looks good!</p>’;
+} else {
+flags.forEach(f => flagList.appendChild(buildFlagItem(f)));
+}
 
-  const suggs = data.improvement_suggestions || [];
-  suggCount.textContent = suggs.length;
-  suggList.innerHTML = '';
-  if (!suggs.length) {
-    suggList.innerHTML = '<p style="font-size:14px;color:var(--text3);padding:8px 0">No specific suggestions — well written!</p>';
-  } else {
-    suggs.forEach((s, i) => suggList.appendChild(buildSuggItem(s, i + 1)));
-  }
+const suggs = data.improvement_suggestions || [];
+suggCount.textContent = suggs.length;
+suggList.innerHTML = ‘’;
+if (!suggs.length) {
+suggList.innerHTML = ‘<p style="font-size:14px;color:var(--text3);padding:8px 0">No specific suggestions — well written!</p>’;
+} else {
+suggs.forEach((s, i) => suggList.appendChild(buildSuggItem(s, i + 1)));
+}
 
-  results.classList.remove('hidden');
-  results.classList.add('fade-in');
-  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+results.classList.remove(‘hidden’);
+results.classList.add(‘fade-in’);
+results.scrollIntoView({ behavior: ‘smooth’, block: ‘start’ });
 }
 
 // ── Flag item builder ──────────────────────────────────────────────────────────
 function buildFlagItem(f) {
-  const div = document.createElement('div');
-  div.className = 'flag-item';
-  const replacement = f.replacement || 'Consider rewriting this phrase in your own authentic voice.';
-  div.innerHTML = `
-    <div class="flag-original">
-      <div class="flag-original-left">
-        <span class="flag-label">⚠ Flagged Phrase</span>
-        <span class="flag-text">"${esc(f.text || '')}"</span>
-        <span class="flag-reason">${esc(f.reason || '')}</span>
-      </div>
-    </div>
-    <div class="flag-replacement">
-      <div class="flag-replacement-left">
-        <span class="replacement-label">✦ Suggested Replacement</span>
-        <span class="replacement-text">"${esc(replacement)}"</span>
-      </div>
-      <button class="copy-btn" title="Copy replacement text">⎘ Copy</button>
-    </div>`;
-  div.querySelector('.copy-btn').addEventListener('click', function() {
-    navigator.clipboard.writeText(replacement).then(() => {
-      this.textContent = '✓ Copied';
-      this.classList.add('copied');
-      setTimeout(() => { this.textContent = '⎘ Copy'; this.classList.remove('copied'); }, 2000);
-    });
-  });
-  return div;
+const div = document.createElement(‘div’);
+div.className = ‘flag-item’;
+const replacement = f.replacement || ‘Consider rewriting this phrase in your own authentic voice.’;
+div.innerHTML = ` <div class="flag-original"> <div class="flag-original-left"> <span class="flag-label">⚠ Flagged Phrase</span> <span class="flag-text">"${esc(f.text || '')}"</span> <span class="flag-reason">${esc(f.reason || '')}</span> </div> </div> <div class="flag-replacement"> <div class="flag-replacement-left"> <span class="replacement-label">✦ Suggested Replacement</span> <span class="replacement-text">"${esc(replacement)}"</span> </div> <button class="copy-btn" title="Copy replacement text">⎘ Copy</button> </div>`;
+div.querySelector(’.copy-btn’).addEventListener(‘click’, function() {
+navigator.clipboard.writeText(replacement).then(() => {
+this.textContent = ‘✓ Copied’;
+this.classList.add(‘copied’);
+setTimeout(() => { this.textContent = ‘⎘ Copy’; this.classList.remove(‘copied’); }, 2000);
+});
+});
+return div;
 }
 
 // ── Suggestion item builder ────────────────────────────────────────────────────
 function buildSuggItem(s, num) {
-  const div = document.createElement('div');
-  div.className = 'sugg-item';
-  if (typeof s === 'string') {
-    div.innerHTML = `
-      <div class="sugg-header">
-        <div class="sugg-num">${num}</div>
-        <div class="sugg-issue">${esc(s)}</div>
-      </div>`;
-  } else {
-    div.innerHTML = `
-      <div class="sugg-header">
-        <div class="sugg-num">${num}</div>
-        <div class="sugg-issue">${esc(s.issue || s.suggestion || '')}</div>
-      </div>
-      ${s.suggestion ? `<p class="sugg-advice">${esc(s.suggestion)}</p>` : ''}
-      ${s.example_before || s.example_after ? `
-        <div class="sugg-examples">
-          <div class="ex-box before">
-            <div class="ex-label">Before</div>
-            <div class="ex-text">${esc(s.example_before || '—')}</div>
-          </div>
-          <div class="ex-box after">
-            <div class="ex-label">After</div>
-            <div class="ex-text">${esc(s.example_after || '—')}</div>
-          </div>
-        </div>` : ''}`;
-  }
-  return div;
+const div = document.createElement(‘div’);
+div.className = ‘sugg-item’;
+if (typeof s === ‘string’) {
+div.innerHTML = ` <div class="sugg-header"> <div class="sugg-num">${num}</div> <div class="sugg-issue">${esc(s)}</div> </div>`;
+} else {
+div.innerHTML = `<div class="sugg-header"> <div class="sugg-num">${num}</div> <div class="sugg-issue">${esc(s.issue || s.suggestion || '')}</div> </div> ${s.suggestion ?`<p class="sugg-advice">${esc(s.suggestion)}</p>`: ''} ${s.example_before || s.example_after ?`
+<div class="sugg-examples">
+<div class="ex-box before">
+<div class="ex-label">Before</div>
+<div class="ex-text">${esc(s.example_before || ‘—’)}</div>
+</div>
+<div class="ex-box after">
+<div class="ex-label">After</div>
+<div class="ex-text">${esc(s.example_after || ‘—’)}</div>
+</div>
+</div>` : ''}`;
+}
+return div;
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────
-reuploadBtn.addEventListener('click', () => {
-  stopPolling();
-  stopClock();
-  results.classList.add('hidden');
-  uploadSection.classList.remove('hidden');
-  // Reset loader bar for next use
-  loaderBar.style.animation = '';
-  loaderBar.style.width = '0%';
-  resetUpload();
-  uploadSection.scrollIntoView({ behavior: 'smooth' });
+reuploadBtn.addEventListener(‘click’, () => {
+stopPolling();
+stopClock();
+results.classList.add(‘hidden’);
+uploadSection.classList.remove(‘hidden’);
+// Reset loader bar for next use
+loaderBar.style.animation = ‘’;
+loaderBar.style.width = ‘0%’;
+analysisStartMs = null;
+jobStartTime = null;
+if (loaderTime) loaderTime.textContent = ‘’;
+const loaderPct = document.getElementById(‘loaderPercent’);
+if (loaderPct) loaderPct.textContent = ‘’;
+const el = document.getElementById(‘loaderElapsed’);
+if (el) el.textContent = ‘’;
+resetUpload();
+uploadSection.scrollIntoView({ behavior: ‘smooth’ });
 });
 
-copyBtn.addEventListener('click', () => {
-  if (!currentReport) return;
-  navigator.clipboard.writeText(buildReportText(currentReport))
-    .then(() => showToast('✅ Report summary copied!', 'success'));
+copyBtn.addEventListener(‘click’, () => {
+if (!currentReport) return;
+navigator.clipboard.writeText(buildReportText(currentReport))
+.then(() => showToast(‘✅ Report summary copied!’, ‘success’));
 });
 
-downloadBtn.addEventListener('click', () => {
-  if (!currentReport) return;
-  const blob = new Blob([buildReportText(currentReport)], { type: 'text/plain' });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), { href: url, download: 'originality-report.txt' });
-  a.click(); URL.revokeObjectURL(url);
-  showToast('📥 Report downloaded!', 'success');
+downloadBtn.addEventListener(‘click’, () => {
+if (!currentReport) return;
+const blob = new Blob([buildReportText(currentReport)], { type: ‘text/plain’ });
+const url = URL.createObjectURL(blob);
+const a = Object.assign(document.createElement(‘a’), { href: url, download: ‘originality-report.txt’ });
+a.click(); URL.revokeObjectURL(url);
+showToast(‘📥 Report downloaded!’, ‘success’);
 });
 
 function buildReportText(data) {
-  const sep = '═'.repeat(52);
-  const sub = '─'.repeat(52);
-  const lines = [
-    sep, '  ORIGINALITY CHECKER AI — FULL REPORT', sep,
-    `File    : ${data.fileName || 'Unknown'}`,
-    `Date    : ${new Date().toLocaleString()}`,
-    '',
-    `Plagiarism Risk Score    : ${data.plagiarism_score}/100  (${scoreDesc(data.plagiarism_score)})`,
-    `AI-Generated Likelihood  : ${data.ai_likelihood}  (${aiDesc_(data.ai_likelihood)})`,
-    `Word Count               : ${(data.word_count||0).toLocaleString()}`,
-    `Chunks Analyzed          : ${data.chunks_analyzed||1}`,
-    '', sub, 'SUMMARY', sub,
-    data.summary || '—', '',
-    sub, 'FLAGGED PHRASES + REPLACEMENTS', sub,
-    ...(data.flagged_sections||[]).flatMap((f,i) => [
-      `${i+1}. FLAGGED      : "${f.text}"`,
-      `   REASON       : ${f.reason}`,
-      `   REPLACE WITH : "${f.replacement || 'Rewrite in your own voice'}"`,
-      ''
-    ]),
-    sub, 'IMPROVEMENT SUGGESTIONS', sub,
-    ...(data.improvement_suggestions||[]).flatMap((s,i) => {
-      if (typeof s === 'string') return [`${i+1}. ${s}`, ''];
-      return [
-        `${i+1}. ISSUE  : ${s.issue||''}`,
-        `   ADVICE : ${s.suggestion||''}`,
-        `   BEFORE : ${s.example_before||''}`,
-        `   AFTER  : ${s.example_after||''}`,
-        ''
-      ];
-    }),
-    sep,
-    'Results are indicative. Not a legal guarantee.',
-  ];
-  return lines.join('\n');
+const sep = ‘═’.repeat(52);
+const sub = ‘─’.repeat(52);
+const lines = [
+sep, ’ ORIGINALITY CHECKER AI — FULL REPORT’, sep,
+`File : ${data.fileName || 'Unknown'}`,
+`Date : ${new Date().toLocaleString()}`,
+‘’,
+`Plagiarism Risk Score : ${data.plagiarism_score}/100 (${scoreDesc(data.plagiarism_score)})`,
+`AI-Generated Likelihood : ${data.ai_likelihood} (${aiDesc_(data.ai_likelihood)})`,
+`Word Count : ${(data.word_count||0).toLocaleString()}`,
+`Chunks Analyzed : ${data.chunks_analyzed||1}`,
+‘’, sub, ‘SUMMARY’, sub,
+data.summary || ‘—’, ‘’,
+sub, ‘FLAGGED PHRASES + REPLACEMENTS’, sub,
+…(data.flagged_sections||[]).flatMap((f,i) => [
+`${i+1}. FLAGGED : "${f.text}"`,
+` REASON : ${f.reason}`,
+` REPLACE WITH : "${f.replacement || 'Rewrite in your own voice'}"`,
+‘’
+]),
+sub, ‘IMPROVEMENT SUGGESTIONS’, sub,
+…(data.improvement_suggestions||[]).flatMap((s,i) => {
+if (typeof s === ‘string’) return [`${i+1}. ${s}`, ‘’];
+return [
+`${i+1}. ISSUE : ${s.issue||''}`,
+` ADVICE : ${s.suggestion||''}`,
+` BEFORE : ${s.example_before||''}`,
+` AFTER : ${s.example_after||''}`,
+‘’
+];
+}),
+sep,
+‘Results are indicative. Not a legal guarantee.’,
+];
+return lines.join(’\n’);
 }
 
 // ── History ────────────────────────────────────────────────────────────────────
 function saveHistory(data, fileName) {
-  const hist = getHistory();
-  hist.unshift({ id: Date.now(), fileName, plagiarism_score: data.plagiarism_score, ai_likelihood: data.ai_likelihood, date: new Date().toLocaleDateString() });
-  localStorage.setItem('oc_history', JSON.stringify(hist.slice(0, 10)));
-  renderHistory();
+const hist = getHistory();
+hist.unshift({ id: Date.now(), fileName, plagiarism_score: data.plagiarism_score, ai_likelihood: data.ai_likelihood, date: new Date().toLocaleDateString() });
+localStorage.setItem(‘oc_history’, JSON.stringify(hist.slice(0, 10)));
+renderHistory();
 }
 function getHistory() {
-  try { return JSON.parse(localStorage.getItem('oc_history') || '[]'); } catch { return []; }
+try { return JSON.parse(localStorage.getItem(‘oc_history’) || ‘[]’); } catch { return []; }
 }
 function renderHistory() {
-  const hist = getHistory();
-  historyList.innerHTML = '';
-  if (!hist.length) {
-    historyList.innerHTML = '<li class="history-empty">No analyses yet — upload a document to begin.</li>';
-    return;
-  }
-  hist.forEach(item => {
-    const sc    = item.plagiarism_score || 0;
-    const color = sc <= 30 ? '#4eff9a' : sc <= 60 ? '#ffc84e' : '#ff5e5e';
-    const ext   = (item.fileName || '').split('.').pop().toUpperCase().slice(0,4);
-    const li    = document.createElement('li');
-    li.className = 'history-item';
-    li.innerHTML = `
-      <div class="hist-icon" style="background:${color}">${esc(ext)}</div>
-      <span class="hist-name">${esc(item.fileName || '—')}</span>
-      <span class="hist-badge" style="background:${color}18;color:${color};border:1px solid ${color}">${sc}/100</span>
-      <span class="hist-ai">${esc(item.ai_likelihood||'')}</span>
-      <span class="hist-date">${esc(item.date||'')}</span>`;
-    historyList.appendChild(li);
-  });
+const hist = getHistory();
+historyList.innerHTML = ‘’;
+if (!hist.length) {
+historyList.innerHTML = ‘<li class="history-empty">No analyses yet — upload a document to begin.</li>’;
+return;
 }
-clearHistoryBtn.addEventListener('click', () => {
-  localStorage.removeItem('oc_history'); renderHistory();
+hist.forEach(item => {
+const sc = item.plagiarism_score || 0;
+const color = sc <= 30 ? ‘#4eff9a’ : sc <= 60 ? ‘#ffc84e’ : ‘#ff5e5e’;
+const ext = (item.fileName || ‘’).split(’.’).pop().toUpperCase().slice(0,4);
+const li = document.createElement(‘li’);
+li.className = ‘history-item’;
+li.innerHTML = ` <div class="hist-icon" style="background:${color}">${esc(ext)}</div> <span class="hist-name">${esc(item.fileName || '—')}</span> <span class="hist-badge" style="background:${color}18;color:${color};border:1px solid ${color}">${sc}/100</span> <span class="hist-ai">${esc(item.ai_likelihood||'')}</span> <span class="hist-date">${esc(item.date||'')}</span>`;
+historyList.appendChild(li);
+});
+}
+clearHistoryBtn.addEventListener(‘click’, () => {
+localStorage.removeItem(‘oc_history’); renderHistory();
 });
 renderHistory();
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function scoreDesc(s) {
-  if (s <= 20) return 'Highly original — very low risk';
-  if (s <= 40) return 'Mostly original — minor patterns detected';
-  if (s <= 60) return 'Moderate risk — several generic sections';
-  if (s <= 80) return 'High risk — significant unoriginal content';
-  return 'Very high risk — largely non-original';
+if (s <= 20) return ‘Highly original — very low risk’;
+if (s <= 40) return ‘Mostly original — minor patterns detected’;
+if (s <= 60) return ‘Moderate risk — several generic sections’;
+if (s <= 80) return ‘High risk — significant unoriginal content’;
+return ‘Very high risk — largely non-original’;
 }
 function aiDesc_(l) {
-  if (l === 'Low')    return 'Clearly human-authored writing';
-  if (l === 'Medium') return 'Possible AI-assistance detected';
-  return 'Strong AI-generation patterns — humanise significantly';
+if (l === ‘Low’) return ‘Clearly human-authored writing’;
+if (l === ‘Medium’) return ‘Possible AI-assistance detected’;
+return ‘Strong AI-generation patterns — humanise significantly’;
 }
 function esc(str) {
-  return String(str||'')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+return String(str||’’)
+.replace(/&/g,’&’).replace(/</g,’<’)
+.replace(/>/g,’>’).replace(/”/g,’"’);
 }
-function showToast(msg, type = 'info') {
-  document.querySelector('.oc-toast')?.remove();
-  const t = document.createElement('div');
-  t.className = 'oc-toast';
-  t.textContent = msg;
-  Object.assign(t.style, {
-    position:'fixed', bottom:'28px', right:'28px', zIndex:'9999',
-    padding:'13px 22px', borderRadius:'12px',
-    fontSize:'13px', fontWeight:'600',
-    background: type==='error' ? 'rgba(255,94,94,0.15)' : 'rgba(78,255,154,0.15)',
-    border: `1px solid ${type==='error' ? '#ff5e5e' : '#4eff9a'}`,
-    color: type==='error' ? '#ff5e5e' : '#4eff9a',
-    backdropFilter:'blur(16px)',
-    animation:'fadeUp 0.3s ease',
-    maxWidth:'340px',
-    boxShadow:'0 8px 32px rgba(0,0,0,0.3)',
-  });
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
+function showToast(msg, type = ‘info’) {
+document.querySelector(’.oc-toast’)?.remove();
+const t = document.createElement(‘div’);
+t.className = ‘oc-toast’;
+t.textContent = msg;
+Object.assign(t.style, {
+position:‘fixed’, bottom:‘28px’, right:‘28px’, zIndex:‘9999’,
+padding:‘13px 22px’, borderRadius:‘12px’,
+fontSize:‘13px’, fontWeight:‘600’,
+background: type===‘error’ ? ‘rgba(255,94,94,0.15)’ : ‘rgba(78,255,154,0.15)’,
+border: `1px solid ${type==='error' ? '#ff5e5e' : '#4eff9a'}`,
+color: type===‘error’ ? ‘#ff5e5e’ : ‘#4eff9a’,
+backdropFilter:‘blur(16px)’,
+animation:‘fadeUp 0.3s ease’,
+maxWidth:‘340px’,
+boxShadow:‘0 8px 32px rgba(0,0,0,0.3)’,
+});
+document.body.appendChild(t);
+setTimeout(() => t.remove(), 3500);
 }
