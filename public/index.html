@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8"/>
@@ -11,7 +11,7 @@
 </head>
 <body>
 
-<!-- â”€â”€ NAV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── NAV ───────────────────────────────────────────────────────── -->
 <nav class="nav">
   <div class="nav-brand">
     <div class="brand-icon">
@@ -23,37 +23,37 @@
     <span class="brand-name">Originality<em>AI</em></span>
   </div>
   <div class="nav-center">
-    <span class="nav-tag">Plagiarism Â· AI Detection Â· Humanisation</span>
+    <span class="nav-tag">Plagiarism · AI Detection · Humanisation</span>
   </div>
   <div class="nav-right">
-    <span class="accuracy-note">âš  Indicative â€” not a legal guarantee</span>
+    <span class="accuracy-note">⚠ Indicative — not a legal guarantee</span>
     <button class="theme-btn" id="themeBtn">
-      <span class="theme-icon">â˜€</span>
+      <span class="theme-icon">☀</span>
     </button>
   </div>
 </nav>
 
-<!-- â”€â”€ HERO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── HERO ──────────────────────────────────────────────────────── -->
 <header class="hero">
   <div class="hero-kicker">AI-Powered Writing Analysis</div>
   <h1 class="hero-title">How original is<br/><em>your writing?</em></h1>
-  <p class="hero-sub">Upload a PDF or DOCX â€” we'll score plagiarism risk, detect AI patterns, flag suspicious phrases, and give you exact replacement text to make it sound genuinely human.</p>
+  <p class="hero-sub">Upload a PDF or DOCX — we'll score plagiarism risk, detect AI patterns, flag suspicious phrases, and give you exact replacement text to make it sound genuinely human.</p>
   <div class="hero-pills">
-    <span class="pill">ðŸ“„ PDF & DOCX</span>
-    <span class="pill">ðŸ” Phrase-level flags</span>
-    <span class="pill">âœ Replacement suggestions</span>
-    <span class="pill">ðŸ¤– AI-detection</span>
+    <span class="pill">📄 PDF &amp; DOCX</span>
+    <span class="pill">🔍 Phrase-level flags</span>
+    <span class="pill">✍ Replacement suggestions</span>
+    <span class="pill">🤖 AI-detection</span>
   </div>
 </header>
 
-<!-- â”€â”€ MAIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── MAIN ───────────────────────────────────────────────────────── -->
 <main class="main">
 
   <!-- Upload Card -->
   <section class="card upload-card" id="uploadSection">
     <div class="card-header">
       <h2 class="card-title">Upload Your Document</h2>
-      <p class="card-sub">Drag & drop or click to browse Â· PDF or DOCX Â· Max 100 MB</p>
+      <p class="card-sub">Drag &amp; drop or click to browse · PDF or DOCX · Max 100 MB</p>
     </div>
 
     <div class="drop-zone" id="dropZone">
@@ -72,6 +72,7 @@
       </div>
       <p class="drop-title">Drop your file here</p>
       <p class="drop-hint">or</p>
+      <!-- label handles file picker natively — no extra JS needed -->
       <label class="drop-btn" for="fileInput">Browse Files</label>
       <input type="file" id="fileInput" accept=".pdf,.docx" hidden/>
     </div>
@@ -80,10 +81,10 @@
     <div class="file-preview hidden" id="filePreview">
       <div class="file-badge" id="fileExt">PDF</div>
       <div class="file-meta">
-        <span class="file-name" id="fileName">â€”</span>
-        <span class="file-size" id="fileSize">â€”</span>
+        <span class="file-name" id="fileName">—</span>
+        <span class="file-size" id="fileSize">—</span>
       </div>
-      <button class="file-remove" id="fileRemove">âœ• Remove</button>
+      <button class="file-remove" id="fileRemove">✕ Remove</button>
     </div>
 
     <button class="analyze-btn" id="analyzeBtn" disabled>
@@ -94,69 +95,65 @@
     </button>
   </section>
 
- <!-- REPLACE your entire loader section in index.html with this -->
-<section class="loader-wrap hidden" id="loader">
-<div class="loader-box">
-<div class="loader-orbit">
-<div class="loader-planet"></div>
-</div>
-<p class="loader-label" id="loaderLabel">Extracting text…</p>
-<p class="loader-hint">Large documents are chunked so nothing gets missed</p>
-<!-- Time remaining + elapsed -->
-<div class="loader-time-row">
-<span class="loader-time-badge" id="loaderTime"></span>
-<span class="loader-elapsed" id="loaderElapsed"></span>
-</div>
-<!-- Progress bar + percent -->
-<div class="loader-progress-wrap">
-<div class="loader-progress">
-<div class="loader-bar" id="loaderBar"></div>
-</div>
-<span class="loader-percent" id="loaderPercent"></span>
-</div>
-</div>
-</section>
- 
+  <!-- Loader -->
+  <section class="loader-wrap hidden" id="loader">
+    <div class="loader-box">
+      <div class="loader-orbit">
+        <div class="loader-planet"></div>
+      </div>
+      <p class="loader-label" id="loaderLabel">Extracting text…</p>
+      <p class="loader-hint">Large documents are chunked so nothing gets missed</p>
+      <!-- Time remaining + elapsed -->
+      <div class="loader-time-row">
+        <span class="loader-time-badge" id="loaderTime"></span>
+        <span class="loader-elapsed" id="loaderElapsed"></span>
+      </div>
+      <!-- Progress bar + percent -->
+      <div class="loader-progress-wrap">
+        <div class="loader-progress">
+          <div class="loader-bar" id="loaderBar"></div>
+        </div>
+        <span class="loader-percent" id="loaderPercent"></span>
+      </div>
+    </div>
+  </section>
 
   <!-- Results -->
   <section class="results hidden" id="results">
 
     <!-- Score strip -->
     <div class="score-strip">
-      <!-- Plagiarism -->
       <div class="score-tile">
         <div class="score-tile-top">
           <span class="score-tile-label">Plagiarism Risk</span>
-          <span class="score-tile-num" id="plagScore">â€”</span>
+          <span class="score-tile-num" id="plagScore">—</span>
         </div>
         <div class="score-bar-track">
           <div class="score-bar-fill" id="plagBar"></div>
         </div>
-        <p class="score-tile-desc" id="plagDesc">â€”</p>
+        <p class="score-tile-desc" id="plagDesc">—</p>
       </div>
 
-      <!-- AI Likelihood -->
       <div class="score-tile">
         <div class="score-tile-top">
           <span class="score-tile-label">AI-Generated Likelihood</span>
         </div>
         <div class="ai-badge-row">
-          <span class="ai-badge" id="aiBadge">â€”</span>
+          <span class="ai-badge" id="aiBadge">—</span>
         </div>
-        <p class="score-tile-desc" id="aiDesc">â€”</p>
+        <p class="score-tile-desc" id="aiDesc">—</p>
       </div>
 
-      <!-- Stats -->
       <div class="score-tile">
         <div class="score-tile-top">
           <span class="score-tile-label">Document Stats</span>
         </div>
         <div class="stat-row">
-          <div class="stat-box"><span class="stat-num" id="wordCount">â€”</span><span class="stat-lbl">Words</span></div>
+          <div class="stat-box"><span class="stat-num" id="wordCount">—</span><span class="stat-lbl">Words</span></div>
           <div class="stat-divider"></div>
-          <div class="stat-box"><span class="stat-num" id="chunksCount">â€”</span><span class="stat-lbl">Chunks</span></div>
+          <div class="stat-box"><span class="stat-num" id="chunksCount">—</span><span class="stat-lbl">Chunks</span></div>
         </div>
-        <p class="score-tile-desc">Full document analyzed â€” no truncation</p>
+        <p class="score-tile-desc">Full document analyzed — no truncation</p>
       </div>
     </div>
 
@@ -166,7 +163,7 @@
         <div class="rch-dot"></div>
         <h3>Analysis Summary</h3>
       </div>
-      <p class="summary-body" id="summaryText">â€”</p>
+      <p class="summary-body" id="summaryText">—</p>
     </div>
 
     <!-- Flagged Sections -->
@@ -175,7 +172,7 @@
         <div class="rch-dot"></div>
         <h3>Flagged Phrases <span class="badge-count" id="flagCount">0</span></h3>
       </div>
-      <p class="result-card-intro">Each flagged phrase includes a <strong>suggested replacement</strong> â€” click the copy icon to grab it.</p>
+      <p class="result-card-intro">Each flagged phrase includes a <strong>suggested replacement</strong> — click the copy icon to grab it.</p>
       <div class="flag-list" id="flagList"></div>
     </div>
 
@@ -185,15 +182,15 @@
         <div class="rch-dot"></div>
         <h3>Humanisation Suggestions <span class="badge-count" id="suggCount">0</span></h3>
       </div>
-      <p class="result-card-intro">Concrete before â†’ after examples showing exactly how to rewrite your content.</p>
+      <p class="result-card-intro">Concrete before → after examples showing exactly how to rewrite your content.</p>
       <div class="sugg-list" id="suggList"></div>
     </div>
 
     <!-- Actions -->
     <div class="action-bar">
-      <button class="act-btn primary" id="downloadBtn">â¬‡ Download Report</button>
-      <button class="act-btn outline" id="reuploadBtn">â†‘ New Document</button>
-      <button class="act-btn outline" id="copyBtn">âŽ˜ Copy Summary</button>
+      <button class="act-btn primary" id="downloadBtn">⬇ Download Report</button>
+      <button class="act-btn outline" id="reuploadBtn">↑ New Document</button>
+      <button class="act-btn outline" id="copyBtn">⎘ Copy Summary</button>
     </div>
 
   </section>
@@ -207,15 +204,16 @@
       <button class="clear-btn" id="clearHistory">Clear all</button>
     </div>
     <ul class="history-list" id="historyList">
-      <li class="history-empty">No analyses yet â€” upload a document to begin.</li>
+      <li class="history-empty">No analyses yet — upload a document to begin.</li>
     </ul>
   </section>
 
 </main>
 
 <footer class="footer">
-  <p>Powered by Groq Â· llama-3.3-70b Â· Results are indicative only and should not replace professional integrity reviews.</p>
-<p style="text-align:center; padding: 12px 0 4px; font-size: 13px; opacity: 0.5; letter-spacing: 0.05em;">built by Vasudxtt &#128128;&#128376;&#65039;</p></footer>
+  <p>Powered by Groq · llama-3.1-8b-instant · Results are indicative only and should not replace professional integrity reviews.</p>
+  <p style="text-align:center;padding:12px 0 4px;font-size:13px;opacity:0.5;letter-spacing:0.05em;">built by Vasudxtt 💀🖥️</p>
+</footer>
 
 <script src="script.js"></script>
 </body>
