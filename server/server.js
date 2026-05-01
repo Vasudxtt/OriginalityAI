@@ -1,6 +1,6 @@
 /**
  * Originality Checker AI — Frontend v5
- * Clean rewrite — bulletproof file handling + polling + timer
+ * Fixed: file input double-trigger, drag-and-drop conflicts
  */
 'use strict';
 
@@ -146,27 +146,35 @@ dropZone.addEventListener('drop', function(e) {
   if (files && files[0]) handleFile(files[0]);
 });
 
-// Click on drop zone opens file picker
-// But NOT if the click came from the label/button itself
+// ── FIX: Single unified click handler on the drop zone ────────────────────────
+// The root cause of the broken upload:
+//   - The <label for="fileInput"> in HTML natively opens the file picker on click
+//   - The old code ALSO called fileInput.click() from dropZone and browseBtn listeners
+//   - This caused 2–3 simultaneous open-dialog calls which browsers silently cancel
+//
+// Solution: Remove ALL manual fileInput.click() calls.
+// The <label for="fileInput"> in index.html handles opening the picker by itself.
+// We only need to stop the dropZone click from firing when the label/input is clicked
+// (to prevent double-open), which this handler does.
 dropZone.addEventListener('click', function(e) {
-  if (e.target.tagName === 'LABEL' || e.target.tagName === 'INPUT') return;
+  // If the click originated from the label or the hidden input, do nothing —
+  // the browser's native label→input binding already opens the file picker.
+  if (
+    e.target.closest('label') ||
+    e.target.tagName === 'INPUT'
+  ) return;
+
+  // For clicks on the rest of the drop zone (rings, icon, text), open picker manually.
   fileInput.click();
 });
 
-// Prevent label click from bubbling to dropZone
-var browseBtn = document.querySelector('.drop-btn');
-if (browseBtn) {
-  browseBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    fileInput.click();
-  });
-}
-
-// File input change
+// File input change — fires when user selects a file via any method
 fileInput.addEventListener('change', function() {
   if (fileInput.files && fileInput.files[0]) {
     handleFile(fileInput.files[0]);
   }
+  // Reset value so the same file can be re-selected if needed
+  fileInput.value = '';
 });
 
 // Remove file
@@ -178,17 +186,14 @@ function setLoaderMsg(msg) {
 }
 
 function setLoaderProgress(percent, current, total) {
-  // Fill progress bar
   loaderBar.style.animation  = 'none';
   loaderBar.style.marginLeft = '0';
   loaderBar.style.width      = Math.max(percent, 2) + '%';
   loaderBar.style.transition = 'width 0.8s ease';
 
-  // Percent text
   var pctEl = document.getElementById('loaderPercent');
   if (pctEl) pctEl.textContent = percent + '%';
 
-  // Time remaining
   var timeEl = document.getElementById('loaderTime');
   if (timeEl && startTime && current >= 1 && total >= 1) {
     var elapsed   = (Date.now() - startTime) / 1000;
@@ -245,7 +250,6 @@ analyzeBtn.addEventListener('click', async function() {
     return;
   }
 
-  // Switch to loader view
   uploadSection.classList.add('hidden');
   results.classList.add('hidden');
   loader.classList.remove('hidden');
@@ -253,7 +257,6 @@ analyzeBtn.addEventListener('click', async function() {
   setLoaderMsg('Uploading document...');
 
   try {
-    // Upload file — server responds instantly with jobId
     var fd = new FormData();
     fd.append('file', currentFile);
 
@@ -266,7 +269,6 @@ analyzeBtn.addEventListener('click', async function() {
     setLoaderMsg('Analysis started...');
     startClock();
 
-    // Poll until done
     await pollForResult(uploadData.jobId);
 
   } catch(err) {
