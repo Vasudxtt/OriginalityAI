@@ -18,7 +18,10 @@ const crypto   = require("crypto");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+if (!GROQ_API_KEY) {
+  throw new Error("Missing GROQ_API_KEY in environment variables");
+}
 const GROQ_MODEL   = 'llama-3.1-8b-instant';
 
 // ── In-memory job store ───────────────────────────────────────────────────────
