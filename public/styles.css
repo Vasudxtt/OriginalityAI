@@ -481,3 +481,13 @@ body{
   .action-bar{flex-direction:column}
   .act-btn{text-align:center}
 }
+
+/* Hide vertical scrollbar */
+body {
+  overflow-y: hidden;
+}
+
+/* Hide horizontal scrollbar */
+body {
+  overflow-x: hidden;
+}
