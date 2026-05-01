@@ -11,6 +11,7 @@
 - 🔍 Get a **plagiarism risk score** (0–100)
 - 🤖 Detect **AI-generated content** (Low / Medium / High)
 - ✍️ See **flagged phrases** with exact human rewrites
+- ⏱️ Estimated processing time shown before results
 - 💡 Get **improvement suggestions** with before/after examples
 
 ## Tech Stack
