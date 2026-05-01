@@ -15,7 +15,7 @@
   --text:      #eceef4;
   --text2:     #8890a8;
   --text3:     #4e5570;
-  --accent:    #d4ff4e;        /* sharp lime */
+  --accent:    #d4ff4e;
   --teal:      #4ef0c8;
   --amber:     #ffc84e;
   --red:       #ff5e5e;
@@ -54,8 +54,8 @@
 html{scroll-behavior:smooth}
 body{
   font-family:'Inter',sans-serif;
-  background:var(--bg); color:var(--text);
-  min-height:100vh; font-size:15px; line-height:1.7;
+  background:var(--bg);color:var(--text);
+  min-height:100vh;font-size:15px;line-height:1.7;
   transition:background var(--t),color var(--t);
 }
 
@@ -63,8 +63,8 @@ body{
 .nav{
   position:sticky;top:0;z-index:200;
   display:flex;align-items:center;justify-content:space-between;
-  padding:0 40px; height:64px;
-  background:var(--bg); border-bottom:1px solid var(--border);
+  padding:0 40px;height:64px;
+  background:var(--bg);border-bottom:1px solid var(--border);
   backdrop-filter:blur(16px);
 }
 .nav-brand{display:flex;align-items:center;gap:12px}
@@ -160,7 +160,6 @@ body{
 }
 .drop-zone.drag-over{transform:scale(1.01)}
 
-/* Animated rings */
 .drop-visual{position:relative;width:100px;height:100px;margin-bottom:8px;display:flex;align-items:center;justify-content:center}
 .drop-rings{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
 .ring{
@@ -253,9 +252,50 @@ body{
 @keyframes orbit{to{transform:rotate(360deg)}}
 .loader-label{font-family:'Syne',sans-serif;font-size:18px;font-weight:700}
 .loader-hint{font-size:13px;color:var(--text3);max-width:280px}
-.loader-progress{width:100%;height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-top:8px}
-.loader-bar{height:100%;border-radius:2px;background:var(--accent);width:0%;transition:width 0.4s ease;animation:indeterminate 2s ease-in-out infinite}
-@keyframes indeterminate{0%{width:0%;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0%;margin-left:100%}}
+
+/* Timer row */
+.loader-time-row{
+  display:flex;align-items:center;justify-content:center;
+  gap:16px;min-height:30px;flex-wrap:wrap;
+}
+.loader-time-badge{
+  font-size:13px;font-weight:700;
+  color:var(--accent);
+  background:rgba(212,255,78,0.1);
+  border:1px solid rgba(212,255,78,0.25);
+  padding:5px 16px;border-radius:20px;
+  min-width:170px;text-align:center;
+  transition:all 0.4s ease;
+}
+.loader-elapsed{
+  font-size:12px;color:var(--text3);
+}
+
+/* Progress bar + percent */
+.loader-progress-wrap{
+  width:100%;display:flex;align-items:center;gap:10px;
+}
+.loader-progress{
+  flex:1;height:4px;border-radius:2px;
+  background:var(--bg3);overflow:hidden;
+}
+.loader-bar{
+  height:100%;border-radius:2px;background:var(--accent);
+  width:0%;transition:width 0.4s ease;
+  animation:indeterminate 2s ease-in-out infinite;
+}
+@keyframes indeterminate{
+  0%  {width:0%;margin-left:0}
+  50% {width:60%;margin-left:20%}
+  100%{width:0%;margin-left:100%}
+}
+.loader-percent{
+  font-size:14px;font-weight:800;
+  color:var(--accent);min-width:42px;
+  text-align:right;
+  font-family:'Syne',sans-serif;
+  letter-spacing:-0.5px;
+}
 
 /* ── SCORE STRIP ────────────────────────────────────────────────── */
 .score-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
@@ -285,11 +325,11 @@ body{
   font-size:16px;font-weight:700;font-family:'Syne',sans-serif;
 }
 .ai-badge::before{content:'';width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.ai-badge.low   {background:rgba(78,255,154,0.1); color:var(--green); border:1.5px solid var(--green)}
+.ai-badge.low   {background:rgba(78,255,154,0.1);color:var(--green);border:1.5px solid var(--green)}
 .ai-badge.low::before{background:var(--green)}
-.ai-badge.medium{background:rgba(255,200,78,0.1); color:var(--amber); border:1.5px solid var(--amber)}
+.ai-badge.medium{background:rgba(255,200,78,0.1);color:var(--amber);border:1.5px solid var(--amber)}
 .ai-badge.medium::before{background:var(--amber)}
-.ai-badge.high  {background:rgba(255,94,94,0.1);  color:var(--red);   border:1.5px solid var(--red)}
+.ai-badge.high  {background:rgba(255,94,94,0.1); color:var(--red);  border:1.5px solid var(--red)}
 .ai-badge.high::before{background:var(--red)}
 .stat-row{display:flex;align-items:center;gap:0}
 .stat-box{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
@@ -302,9 +342,9 @@ body{
 .result-card-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .result-card-header h3{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;letter-spacing:-0.3px;display:flex;align-items:center;gap:12px}
 .rch-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.result-card-header.teal  .rch-dot{background:var(--teal);  box-shadow:0 0 10px var(--teal)}
-.result-card-header.amber .rch-dot{background:var(--amber); box-shadow:0 0 10px var(--amber)}
-.result-card-header.green .rch-dot{background:var(--green); box-shadow:0 0 10px var(--green)}
+.result-card-header.teal  .rch-dot{background:var(--teal); box-shadow:0 0 10px var(--teal)}
+.result-card-header.amber .rch-dot{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+.result-card-header.green .rch-dot{background:var(--green);box-shadow:0 0 10px var(--green)}
 .badge-count{
   display:inline-flex;align-items:center;justify-content:center;
   min-width:26px;height:26px;padding:0 8px;border-radius:13px;
@@ -382,8 +422,8 @@ body{
   transition:all var(--t);border:none;letter-spacing:0.2px;
   font-family:'Inter',sans-serif;
 }
-.act-btn.primary {background:var(--accent);color:#000}
-.act-btn.outline {background:var(--bg3);color:var(--text);border:1px solid var(--border2)}
+.act-btn.primary{background:var(--accent);color:#000}
+.act-btn.outline{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}
 .act-btn:hover{transform:translateY(-2px);filter:brightness(1.1)}
 .act-btn:active{transform:translateY(0)}
 
@@ -412,10 +452,7 @@ body{
   font-size:11px;font-weight:800;letter-spacing:0.5px;color:#000;
 }
 .hist-name{flex:1;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hist-badge{
-  font-size:12px;font-weight:700;padding:4px 12px;
-  border-radius:20px;white-space:nowrap;flex-shrink:0;
-}
+.hist-badge{font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 .hist-ai{font-size:11px;color:var(--text3);flex-shrink:0}
 .hist-date{font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0}
 
@@ -443,95 +480,4 @@ body{
   .score-strip{grid-template-columns:1fr}
   .action-bar{flex-direction:column}
   .act-btn{text-align:center}
-}
-
-/* ── LOADER TIME + PROGRESS (add to bottom of styles.css) ──────── */
-.loader-time-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  min-height: 28px;
-  flex-wrap: wrap;
-}
-.loader-time-badge {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
-  background: rgba(212,255,78,0.1);
-  border: 1px solid rgba(212,255,78,0.25);
-  padding: 4px 16px;
-  border-radius: 20px;
-  min-width: 160px;
-  text-align: center;
-  transition: all 0.4s ease;
-}
-.loader-elapsed {
-  font-size: 12px;
-  color: var(--text3);
-  letter-spacing: 0.3px;
-}
-.loader-progress-wrap {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-/* Override existing .loader-progress to flex-1 */
-.loader-progress-wrap .loader-progress {
-  flex: 1;
-  margin-top: 0;
-}
-.loader-percent {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
-  min-width: 38px;
-  text-align: right;
-  font-family: 'Syne', sans-serif;
-  letter-spacing: -0.5px;
-}
-/* ── ADD THESE TO THE BOTTOM OF styles.css ──────────────────────── */
-.loader-time-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  min-height: 30px;
-  flex-wrap: wrap;
-}
-.loader-time-badge {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
-  background: rgba(212,255,78,0.1);
-  border: 1px solid rgba(212,255,78,0.25);
-  padding: 5px 16px;
-  border-radius: 20px;
-  min-width: 170px;
-  text-align: center;
-  transition: all 0.4s ease;
-}
-.loader-elapsed {
-  font-size: 12px;
-  color: var(--text3);
-}
-.loader-progress-wrap {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.loader-progress-wrap .loader-progress {
-  flex: 1;
-  margin-top: 0 !important;
-}
-.loader-percent {
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--accent);
-  min-width: 42px;
-  text-align: right;
-  font-family: 'Syne', sans-serif;
-  letter-spacing: -0.5px;
 }
