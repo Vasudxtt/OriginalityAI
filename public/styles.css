@@ -482,12 +482,17 @@ body{
   .act-btn{text-align:center}
 }
 
-/* Hide vertical scrollbar */
-body {
-  overflow-y: hidden;
+/* Chrome, Edge, Safari */
+::-webkit-scrollbar {
+  display: none;
 }
 
-/* Hide horizontal scrollbar */
+/* Firefox */
+html {
+  scrollbar-width: none;
+}
+
+/* IE/old Edge */
 body {
-  overflow-x: hidden;
+  -ms-overflow-style: none;
 }
