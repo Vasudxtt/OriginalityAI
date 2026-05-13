@@ -22,7 +22,7 @@ if (!GROQ_API_KEY) {
 }
 
 // Use a more capable model that follows JSON instructions better
-const GROQ_MODEL = 'llama-3.1-70b-versatile';
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 
 // ── Health check ────────────────────────────────────────────────
 app.get('/health', (req, res) => {
