@@ -1,16 +1,16 @@
 /**
  * Originality Checker AI — Backend Server
- * Fixed: robust JSON extraction, better prompts, retry logic
+ * Fixed: uses llama-3.3-70b-versatile + strict JSON schema (100% valid JSON guaranteed)
  */
 require('dotenv').config();
-const express   = require('express');
-const multer    = require('multer');
-const path      = require('path');
-const axios     = require('axios');
-const cors      = require('cors');
-const pdfParse  = require('pdf-parse');
-const mammoth   = require('mammoth');
-const crypto    = require('crypto');
+const express  = require('express');
+const multer   = require('multer');
+const path     = require('path');
+const axios    = require('axios');
+const cors     = require('cors');
+const pdfParse = require('pdf-parse');
+const mammoth  = require('mammoth');
+const crypto   = require('crypto');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -21,21 +21,20 @@ if (!GROQ_API_KEY) {
   process.exit(1);
 }
 
-// Use a more capable model that follows JSON instructions better
-const GROQ_MODEL = 'llama-3.1-8b-instant';
+// Current active Groq models (as of 2026)
+const PRIMARY_MODEL  = 'llama-3.3-70b-versatile';  // Best quality, supports strict JSON schema
+const FALLBACK_MODEL = 'llama-3.1-8b-instant';      // Fast fallback
 
 // ── Health check ────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', model: GROQ_MODEL, key_loaded: true });
+  res.json({ status: 'ok', model: PRIMARY_MODEL, key_loaded: true });
 });
 
 // ── In-memory job store ─────────────────────────────────────────
 const jobs = {};
 setInterval(() => {
   const cutoff = Date.now() - 3600000;
-  for (const id in jobs) {
-    if (jobs[id].createdAt < cutoff) delete jobs[id];
-  }
+  for (const id in jobs) if (jobs[id].createdAt < cutoff) delete jobs[id];
 }, 600000);
 
 app.use(cors());
@@ -52,9 +51,7 @@ const upload = multer({
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ];
-    ok.includes(file.mimetype)
-      ? cb(null, true)
-      : cb(new Error('Only PDF and DOCX files are allowed.'));
+    ok.includes(file.mimetype) ? cb(null, true) : cb(new Error('Only PDF and DOCX files are allowed.'));
   },
 });
 
@@ -67,290 +64,251 @@ function chunkText(text, maxWords = 600) {
   return out;
 }
 
-// ── Robust JSON extractor ───────────────────────────────────────
-// Handles: plain JSON, ```json fences, JSON embedded in prose
-function extractJSON(raw) {
-  if (!raw || typeof raw !== 'string') throw new Error('Empty response');
+// ── Strict JSON Schema ─────────────────────────────────────────
+const ANALYSIS_SCHEMA = {
+  type: 'object',
+  properties: {
+    plagiarism_score: { type: 'integer' },
+    ai_likelihood:    { type: 'string', enum: ['Low', 'Medium', 'High'] },
+    summary:          { type: 'string' },
+    flagged_sections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text:        { type: 'string' },
+          reason:      { type: 'string' },
+          replacement: { type: 'string' },
+        },
+        required: ['text', 'reason', 'replacement'],
+        additionalProperties: false,
+      },
+    },
+    improvement_suggestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          issue:          { type: 'string' },
+          suggestion:     { type: 'string' },
+          example_before: { type: 'string' },
+          example_after:  { type: 'string' },
+        },
+        required: ['issue', 'suggestion', 'example_before', 'example_after'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['plagiarism_score', 'ai_likelihood', 'summary', 'flagged_sections', 'improvement_suggestions'],
+  additionalProperties: false,
+};
 
-  // 1. Try direct parse first
-  const trimmed = raw.trim();
-  try { return JSON.parse(trimmed); } catch (_) {}
-
-  // 2. Strip markdown fences (```json ... ``` or ``` ... ```)
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenceMatch) {
-    try { return JSON.parse(fenceMatch[1].trim()); } catch (_) {}
-  }
-
-  // 3. Find the first { ... } block in the string
-  const start = trimmed.indexOf('{');
-  const end   = trimmed.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    try { return JSON.parse(trimmed.slice(start, end + 1)); } catch (_) {}
-  }
-
-  // 4. Try to fix common issues: trailing commas, single quotes
-  let fixed = trimmed
-    .replace(/,\s*([}\]])/g, '$1')          // trailing commas
-    .replace(/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":')  // single-quoted keys
-    .replace(/:\s*'([^']*)'/g, ': "$1"');   // single-quoted values
-  const s2 = fixed.indexOf('{');
-  const e2 = fixed.lastIndexOf('}');
-  if (s2 !== -1 && e2 !== -1 && e2 > s2) {
-    try { return JSON.parse(fixed.slice(s2, e2 + 1)); } catch (_) {}
-  }
-
-  throw new Error('Could not extract valid JSON from model response');
-}
-
-// ── Groq API call ───────────────────────────────────────────────
-async function callGroq(systemPrompt, userPrompt, maxTokens = 1200) {
+// ── Call Groq with strict JSON schema ──────────────────────────
+async function callGroqStrict(model, systemPrompt, userPrompt, maxTokens) {
   const r = await axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     {
-      model:       GROQ_MODEL,
-      max_tokens:  maxTokens,
+      model,
+      max_tokens:  maxTokens || 1500,
       temperature: 0.2,
-      response_format: { type: 'json_object' }, // Force JSON mode
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userPrompt   },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name:   'analysis_result',
+          strict: true,
+          schema: ANALYSIS_SCHEMA,
+        },
+      },
+    },
+    {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
+      timeout: 120000,
+    }
+  );
+  const content = r.data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Empty response from Groq');
+  return JSON.parse(content); // strict mode guarantees valid JSON
+}
+
+// ── Call Groq with basic JSON mode (fallback) ──────────────────
+async function callGroqJsonMode(model, systemPrompt, userPrompt, maxTokens) {
+  const r = await axios.post(
+    'https://api.groq.com/openai/v1/chat/completions',
+    {
+      model,
+      max_tokens:      maxTokens || 1200,
+      temperature:     0.1,
+      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: userPrompt   },
       ],
     },
     {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization:  `Bearer ${GROQ_API_KEY}`,
-      },
-      timeout: 180000,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
+      timeout: 90000,
     }
   );
-  const content = r.data?.choices?.[0]?.message?.content || '';
-  if (!content) throw new Error('Empty response from Groq');
-  return content;
+  const content = r.data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Empty response');
+  const t = content.trim();
+  try { return JSON.parse(t); } catch (_) {}
+  const s = t.indexOf('{'), e = t.lastIndexOf('}');
+  if (s !== -1 && e > s) return JSON.parse(t.slice(s, e + 1));
+  throw new Error('Could not parse JSON from response');
 }
 
-// ── Analyze one chunk ───────────────────────────────────────────
-async function analyzeChunk(chunk, idx, total) {
-  const wordCount = chunk.split(/\s+/).filter(Boolean).length;
+// ── Sanitize result ────────────────────────────────────────────
+function sanitize(data) {
+  const score = Math.min(100, Math.max(0, parseInt(data.plagiarism_score) || 35));
+  const ai    = ['Low', 'Medium', 'High'].includes(data.ai_likelihood) ? data.ai_likelihood : 'Medium';
+  const flags = (Array.isArray(data.flagged_sections) ? data.flagged_sections : [])
+    .filter(f => f && f.text && f.reason && f.replacement).slice(0, 5);
+  const suggs = (Array.isArray(data.improvement_suggestions) ? data.improvement_suggestions : [])
+    .filter(s => s && (s.issue || s.suggestion))
+    .map(s => ({
+      issue:          s.issue          || 'Writing Issue',
+      suggestion:     s.suggestion     || 'Rewrite this section more naturally.',
+      example_before: s.example_before || '',
+      example_after:  s.example_after  || '',
+    })).slice(0, 5);
+  return {
+    plagiarism_score:        score,
+    ai_likelihood:           ai,
+    summary:                 String(data.summary || 'Analysis complete.').slice(0, 800),
+    flagged_sections:        flags,
+    improvement_suggestions: suggs,
+  };
+}
 
-  const systemPrompt = `You are an expert academic integrity and plagiarism analyst.
-Your job is to analyze text for plagiarism risk and AI-generated content.
-IMPORTANT: You MUST respond with a valid JSON object. No prose, no explanation outside the JSON.`;
+// ── Build prompts ──────────────────────────────────────────────
+function buildPrompts(chunk, idx, total) {
+  const wc = chunk.split(/\s+/).filter(Boolean).length;
 
-  const userPrompt = `Analyze the following text (Part ${idx + 1} of ${total}, ~${wordCount} words) for plagiarism risk and AI-generation likelihood.
+  const system = `You are an expert academic integrity analyst specializing in plagiarism detection and AI-generated content identification.
+Analyze the provided text thoroughly and return structured results.
+Score plagiarism_score from 0 (fully original human writing) to 100 (fully AI-generated or copied).
+Always find at least 1-2 flagged_sections if ANY generic, templated, or AI-typical phrasing exists.
+Always provide at least 1-2 improvement_suggestions with concrete before/after examples.`;
 
-TEXT TO ANALYZE:
+  const user = `Analyze Part ${idx + 1} of ${total} (~${wc} words) for plagiarism and AI-generation patterns.
+
+TEXT:
 """
 ${chunk}
 """
 
-Respond with ONLY this JSON structure (fill every field, no nulls):
-{
-  "plagiarism_score": <integer 0-100, where 0=fully original, 100=fully copied/AI>,
-  "ai_likelihood": "<exactly one of: Low, Medium, High>",
-  "summary": "<2-3 sentence analysis of the writing style, originality, and any concerns>",
-  "flagged_sections": [
-    {
-      "text": "<exact short phrase from the text that sounds generic or AI-like>",
-      "reason": "<why this phrase is flagged>",
-      "replacement": "<a more original, human-sounding rewrite of the phrase>"
+Requirements:
+- plagiarism_score: 0=original human writing, 50=generic/formulaic, 100=AI-generated or copied
+- ai_likelihood: "Low" if clearly human, "Medium" if possibly AI-assisted, "High" if strongly AI-generated
+- summary: 2-3 sentences describing writing quality, originality, and key concerns
+- flagged_sections: up to 3 phrases that sound generic, templated, or AI-typical. Return [] ONLY if text is genuinely unique throughout.
+- improvement_suggestions: up to 3 concrete writing improvements. Return [] ONLY if writing is excellent with no improvements possible.`;
+
+  return { system, user };
+}
+
+// ── Analyze one chunk with fallback chain ──────────────────────
+async function analyzeChunk(chunk, idx, total) {
+  const { system, user } = buildPrompts(chunk, idx, total);
+
+  // Attempts 1-2: Primary model with strict schema
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      console.log(`  ↳ Chunk ${idx + 1} attempt ${attempt + 1} [${PRIMARY_MODEL} strict]`);
+      const data   = await callGroqStrict(PRIMARY_MODEL, system, user, 1500);
+      const result = sanitize(data);
+      console.log(`  ✓ score:${result.plagiarism_score} ai:${result.ai_likelihood} flags:${result.flagged_sections.length} suggs:${result.improvement_suggestions.length}`);
+      return result;
+    } catch (err) {
+      const is429 = err.response?.status === 429;
+      console.warn(`  Chunk ${idx + 1} attempt ${attempt + 1} failed: ${err.message}`);
+      if (is429) await sleep(20000);
+      else if (attempt === 0) await sleep(3000);
     }
-  ],
-  "improvement_suggestions": [
-    {
-      "issue": "<writing issue title>",
-      "suggestion": "<concrete advice to fix it>",
-      "example_before": "<short example of the problem>",
-      "example_after": "<improved version>"
-    }
-  ]
+  }
+
+  // Attempt 3: Fallback model with json_object mode
+  try {
+    console.log(`  ↳ Chunk ${idx + 1} attempt 3 [${FALLBACK_MODEL} json_object]`);
+    const fbSystem = system + '\n\nRespond ONLY with a valid JSON object. No prose, no markdown.';
+    const fbUser   = user   + '\n\nReturn ONLY raw JSON starting with { and ending with }.';
+    const data     = await callGroqJsonMode(FALLBACK_MODEL, fbSystem, fbUser, 1200);
+    const result   = sanitize(data);
+    console.log(`  ✓ fallback score:${result.plagiarism_score} flags:${result.flagged_sections.length}`);
+    return result;
+  } catch (err) {
+    console.error(`  ✗ Chunk ${idx + 1} all attempts failed: ${err.message}`);
+    return {
+      plagiarism_score: 45,
+      ai_likelihood:    'Medium',
+      summary:          `Section ${idx + 1} analysis could not complete due to a server error. Review this section manually for AI-typical patterns such as passive voice and generic transitions.`,
+      flagged_sections: [],
+      improvement_suggestions: [{
+        issue:          'Manual Review Required',
+        suggestion:     'This section could not be automatically analyzed. Look for overly formal language, generic transitions, and passive voice — common AI writing patterns.',
+        example_before: 'It is important to note that this topic has significant implications.',
+        example_after:  'This topic matters because [your specific reason here].',
+      }],
+    };
+  }
 }
 
-Rules:
-- plagiarism_score: base it on how generic, templated, or AI-patterned the text is
-- flagged_sections: include 1-3 items minimum if any generic phrasing exists; empty array only if text is genuinely unique throughout
-- improvement_suggestions: include 1-3 concrete suggestions; empty array only if text needs no improvement
-- If the text is short but analyzable, still provide real analysis`;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  const raw  = await callGroq(systemPrompt, userPrompt, 1200);
-  const data = extractJSON(raw);
-
-  // Validate and sanitize the response
-  return {
-    plagiarism_score:        clamp(parseInt(data.plagiarism_score) || 30, 0, 100),
-    ai_likelihood:           ['Low','Medium','High'].includes(data.ai_likelihood) ? data.ai_likelihood : 'Medium',
-    summary:                 String(data.summary || 'Analysis complete.').slice(0, 600),
-    flagged_sections:        Array.isArray(data.flagged_sections)        ? data.flagged_sections.filter(isValidFlag).slice(0, 5)      : [],
-    improvement_suggestions: Array.isArray(data.improvement_suggestions) ? data.improvement_suggestions.filter(isValidSugg).slice(0, 5) : [],
-  };
-}
-
-function clamp(val, min, max) { return Math.min(max, Math.max(min, val)); }
-
-function isValidFlag(f) {
-  return f && typeof f === 'object' && f.text && f.reason && f.replacement;
-}
-function isValidSugg(s) {
-  return s && typeof s === 'object' && (s.issue || s.suggestion);
-}
-
-// ── Fallback: use a simpler model if JSON mode fails ───────────
-async function analyzeChunkFallback(chunk, idx, total) {
-  const wordCount = chunk.split(/\s+/).filter(Boolean).length;
-
-  const systemPrompt = `You are a plagiarism and AI-detection analyst. Respond only with valid JSON.`;
-
-  // Shorter, simpler prompt for the smaller model
-  const userPrompt = `Analyze this text for plagiarism/AI patterns. Text (~${wordCount} words):
-"""${chunk.slice(0, 1500)}"""
-
-Return JSON:
-{"plagiarism_score":50,"ai_likelihood":"Medium","summary":"analysis here","flagged_sections":[{"text":"phrase","reason":"why","replacement":"rewrite"}],"improvement_suggestions":[{"issue":"issue","suggestion":"advice","example_before":"before","example_after":"after"}]}
-
-Replace the placeholder values with your real analysis. Keep flagged_sections and improvement_suggestions as real arrays.`;
-
-  const r = await axios.post(
-    'https://api.groq.com/openai/v1/chat/completions',
-    {
-      model:       'llama-3.1-8b-instant',   // Faster fallback model
-      max_tokens:  900,
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user',   content: userPrompt   },
-      ],
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization:  `Bearer ${GROQ_API_KEY}`,
-      },
-      timeout: 60000,
-    }
-  );
-  const content = r.data?.choices?.[0]?.message?.content || '';
-  const data    = extractJSON(content);
-
-  return {
-    plagiarism_score:        clamp(parseInt(data.plagiarism_score) || 40, 0, 100),
-    ai_likelihood:           ['Low','Medium','High'].includes(data.ai_likelihood) ? data.ai_likelihood : 'Medium',
-    summary:                 String(data.summary || 'Fallback analysis complete.').slice(0, 600),
-    flagged_sections:        Array.isArray(data.flagged_sections)        ? data.flagged_sections.filter(isValidFlag).slice(0, 3) : [],
-    improvement_suggestions: Array.isArray(data.improvement_suggestions) ? data.improvement_suggestions.filter(isValidSugg).slice(0, 3) : [],
-  };
-}
-
-// ── Merge all chunk results ─────────────────────────────────────
+// ── Merge results ──────────────────────────────────────────────
 function mergeResults(results) {
   if (!results.length) throw new Error('No results to merge');
-
-  const plagiarism_score = Math.round(
-    results.reduce((s, r) => s + (r.plagiarism_score || 0), 0) / results.length
-  );
-
+  const plagiarism_score = Math.round(results.reduce((s, r) => s + (r.plagiarism_score || 0), 0) / results.length);
   const counts = { Low: 0, Medium: 0, High: 0 };
   results.forEach(r => counts[r.ai_likelihood || 'Medium']++);
   const ai_likelihood = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-
   const summary = results.map(r => r.summary || '').filter(Boolean).join(' ');
-
-  const flagged_sections = results
-    .flatMap(r => r.flagged_sections || [])
-    .slice(0, 30);
-
+  const flagged_sections = results.flatMap(r => r.flagged_sections || []).slice(0, 30);
   const improvement_suggestions = results
     .flatMap(r => r.improvement_suggestions || [])
     .filter((s, i, arr) => arr.findIndex(x => x.issue === s.issue) === i)
     .slice(0, 15);
-
   return { plagiarism_score, ai_likelihood, summary, flagged_sections, improvement_suggestions };
 }
 
-// ── Background processor ────────────────────────────────────────
+// ── Background processor ───────────────────────────────────────
 async function processJobInBackground(jobId, rawText, wordCount, fileName) {
   try {
-    const chunks        = chunkText(rawText, 600);
-    jobs[jobId].total   = chunks.length;
+    const chunks         = chunkText(rawText, 600);
+    jobs[jobId].total    = chunks.length;
     jobs[jobId].progress = 0;
-
-    console.log(`[${jobId}] "${fileName}" — ${chunks.length} chunks, ${wordCount} words`);
+    console.log(`[${jobId}] "${fileName}" — ${chunks.length} chunk(s), ${wordCount} words`);
 
     const results = [];
     for (let i = 0; i < chunks.length; i++) {
-      let chunkResult = null;
-      let attempt     = 0;
-      const maxAttempts = 4;
-
-      while (chunkResult === null && attempt < maxAttempts) {
-        try {
-          console.log(`  ↳ Chunk ${i + 1}/${chunks.length} (attempt ${attempt + 1})`);
-
-          if (attempt < 2) {
-            // First try: primary model with JSON mode
-            chunkResult = await analyzeChunk(chunks[i], i, chunks.length);
-          } else {
-            // Fallback: simpler model/prompt
-            console.log(`  ↳ Switching to fallback model for chunk ${i + 1}`);
-            chunkResult = await analyzeChunkFallback(chunks[i], i, chunks.length);
-          }
-
-          jobs[jobId].progress = i + 1;
-          console.log(`  ✓ Chunk ${i + 1} done — score: ${chunkResult.plagiarism_score}, flags: ${chunkResult.flagged_sections.length}, suggs: ${chunkResult.improvement_suggestions.length}`);
-
-        } catch (err) {
-          attempt++;
-          const is429 = err.response?.status === 429;
-          const delay = (is429 ? 20000 : 4000) * Math.pow(1.5, attempt - 1);
-          console.warn(`  Chunk ${i + 1} attempt ${attempt} failed: ${err.message}. Retry in ${Math.round(delay/1000)}s`);
-
-          if (attempt >= maxAttempts) {
-            console.error(`  ✗ Chunk ${i + 1} permanently failed — using safe default`);
-            chunkResult = {
-              plagiarism_score:        45,
-              ai_likelihood:           'Medium',
-              summary:                 `Section ${i + 1} analysis encountered an error. The content may contain patterns worth reviewing manually.`,
-              flagged_sections:        [],
-              improvement_suggestions: [
-                {
-                  issue:          'Manual Review Needed',
-                  suggestion:     'This section could not be automatically analyzed. Consider reviewing it for generic phrasing and AI-typical sentence structures.',
-                  example_before: 'In conclusion, it is important to note that...',
-                  example_after:  'To wrap up, [your specific insight here]...',
-                }
-              ],
-            };
-            break;
-          }
-          await new Promise(r => setTimeout(r, delay));
-        }
-      }
-
-      results.push(chunkResult);
-      if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 2000));
+      results.push(await analyzeChunk(chunks[i], i, chunks.length));
+      jobs[jobId].progress = i + 1;
+      if (i < chunks.length - 1) await sleep(2000);
     }
 
-    const final          = mergeResults(results);
-    final.word_count     = wordCount;
+    const final           = mergeResults(results);
+    final.word_count      = wordCount;
     final.chunks_analyzed = chunks.length;
-
-    jobs[jobId].status = 'done';
-    jobs[jobId].result = final;
-    console.log(`[${jobId}] Done — score: ${final.plagiarism_score}, AI: ${final.ai_likelihood}, flags: ${final.flagged_sections.length}, suggs: ${final.improvement_suggestions.length}`);
-
+    jobs[jobId].status    = 'done';
+    jobs[jobId].result    = final;
+    console.log(`[${jobId}] Done — score:${final.plagiarism_score} flags:${final.flagged_sections.length} suggs:${final.improvement_suggestions.length}`);
   } catch (err) {
     jobs[jobId].status = 'error';
     jobs[jobId].error  = err.message || 'Analysis failed';
-    console.error(`[${jobId}] Fatal error:`, err.message);
+    console.error(`[${jobId}] Fatal:`, err.message);
   }
 }
 
-// ── POST /analyze ───────────────────────────────────────────────
+// ── POST /analyze ──────────────────────────────────────────────
 app.post('/analyze', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
-
-    console.log(`Received: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`Received: ${req.file.originalname} (${(req.file.size / 1048576).toFixed(2)} MB)`);
 
     let rawText = '';
     if (req.file.mimetype === 'application/pdf') {
@@ -364,84 +322,59 @@ app.post('/analyze', upload.single('file'), async (req, res) => {
       return res.status(422).json({ error: 'Could not extract text from file.' });
 
     const wordCount = rawText.split(/\s+/).filter(Boolean).length;
-    console.log(`${wordCount.toLocaleString()} words extracted`);
-
-    // Warn for very short docs but still process
-    if (wordCount < 30) {
-      console.warn(`Very short document: ${wordCount} words — analysis may be limited`);
-    }
+    console.log(`Extracted ${wordCount} words`);
 
     const jobId = crypto.randomUUID();
     jobs[jobId] = {
-      status:    'processing',
-      progress:  0,
-      total:     null,
-      result:    null,
-      error:     null,
-      fileName:  req.file.originalname,
-      wordCount,
-      createdAt: Date.now(),
+      status: 'processing', progress: 0, total: null,
+      result: null, error: null,
+      fileName: req.file.originalname, wordCount, createdAt: Date.now(),
     };
 
     res.json({ jobId, wordCount });
     processJobInBackground(jobId, rawText, wordCount, req.file.originalname);
-
   } catch (err) {
     console.error('Upload error:', err.message);
-    if (err.code === 'LIMIT_FILE_SIZE')
-      return res.status(413).json({ error: 'File too large. Max 100MB.' });
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large. Max 100MB.' });
     res.status(500).json({ error: err.message || 'Upload failed.' });
   }
 });
 
-// ── GET /status/:jobId ──────────────────────────────────────────
+// ── GET /status/:jobId ─────────────────────────────────────────
 app.get('/status/:jobId', (req, res) => {
   const job = jobs[req.params.jobId];
   if (!job) return res.status(404).json({ error: 'Job not found.' });
 
   if (job.status === 'processing') {
-    const progress = job.progress || 0;
-    const total    = job.total    || 0;
+    const progress = job.progress || 0, total = job.total || 0;
     const percent  = total > 0 ? Math.round((progress / total) * 100) : 0;
     return res.json({
-      status:   'processing',
-      progress,
-      total,
-      percent,
-      message:  progress === 0
-        ? 'Starting analysis…'
-        : `Analyzing chunk ${progress} of ${total}…`,
+      status: 'processing', progress, total, percent,
+      message: progress === 0 ? 'Starting analysis…' : `Analyzing chunk ${progress} of ${total}…`,
     });
   }
-
-  if (job.status === 'error')
-    return res.json({ status: 'error', error: job.error });
+  if (job.status === 'error') return res.json({ status: 'error', error: job.error });
 
   return res.json({
-    status:          'done',
-    progress:        job.total,
-    total:           job.total,
-    percent:         100,
-    word_count:      job.wordCount,
+    status: 'done', progress: job.total, total: job.total, percent: 100,
+    word_count: job.wordCount,
     chunks_analyzed: job.result?.chunks_analyzed || job.total,
     ...job.result,
   });
 });
 
-// ── Multer error handler ────────────────────────────────────────
+// ── Error handler ──────────────────────────────────────────────
 app.use((err, req, res, next) => {
-  if (err.code === 'LIMIT_FILE_SIZE')
-    return res.status(413).json({ error: 'File too large. Max 100MB.' });
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large. Max 100MB.' });
   next(err);
 });
 
-// ── Start ───────────────────────────────────────────────────────
+// ── Start ──────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {
   console.log(`\nOriginality Checker AI → http://localhost:${PORT}`);
-  console.log(`Model : ${GROQ_MODEL} (with llama-3.1-8b-instant fallback)`);
-  console.log(`Mode  : Background jobs (200+ page support)\n`);
+  console.log(`Primary : ${PRIMARY_MODEL} (strict JSON schema)`);
+  console.log(`Fallback: ${FALLBACK_MODEL} (json_object mode)\n`);
 });
-
 server.setTimeout(600000);
 server.keepAliveTimeout = 620000;
 server.headersTimeout   = 630000;
